@@ -25,7 +25,7 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 游戏 | `Casualties Unknown Demo` |
+| 游戏 | `Casualties Unknown` |
 | Mod 加载器 | BepInEx `5.4.23.5` |
 | 运行时 | .NET Framework `4.8` |
 | Unity | `2022.3.62f3` |
@@ -153,10 +153,10 @@
 
 主菜单可以刷新后端、刷新 QR、打开 QR PNG 和断开连接。迷你悬浮窗只显示状态，避免误操作。
 
-如果 QR 使用了错误 IP，例如虚拟网卡地址，请将 `Network/EmbeddedServerAddress` 手动设置为局域网地址：
+如果 QR 使用了错误 IP，例如虚拟网卡地址，请将 `Network/EmbeddedServerAddress` 手动设置为局域网地址，例如：
 
 ```text
-192.168.1.23
+192.168.x.x
 ```
 
 ## 界面操作
@@ -209,4 +209,4 @@ BepInExPlugin\bin\Release\net48\
 - websocket-sharp：用于 DG-Lab Socket 传输的 WebSocket 服务器/客户端库。
 - Newtonsoft.Json：用于 DG-Lab Socket 消息的 JSON 序列化。
 - DG-Lab Socket 协议与 DG-Lab App/设备生态：本项目仅集成公开协议行为，不拥有 DG-Lab。
-- Casualties Unknown Demo：目标游戏。本项目是非官方 Mod，与游戏开发者无从属关系。
+- Casualties Unknown：目标游戏。本项目是非官方 Mod，与游戏开发者无从属关系。

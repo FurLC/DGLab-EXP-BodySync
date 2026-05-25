@@ -37,7 +37,7 @@ In plain words: use less than you think you can handle. The goal is immersion, n
 
 | Item | Value |
 | --- | --- |
-| Game | `Casualties Unknown Demo` |
+| Game | `Casualties Unknown` |
 | Mod loader | BepInEx `5.4.23.5` |
 | Runtime | .NET Framework `4.8` |
 | Unity | `2022.3.62f3` |
@@ -165,10 +165,10 @@ Local QR image:
 
 The main menu can refresh the backend, refresh the QR, open the QR PNG, and disconnect. The mini overlay is intentionally status-only to avoid accidental operation.
 
-If the QR uses a wrong IP such as a virtual adapter address, set `Network/EmbeddedServerAddress` manually to your LAN address:
+If the QR uses a wrong IP such as a virtual adapter address, set `Network/EmbeddedServerAddress` manually to your LAN address, for example:
 
 ```text
-192.168.1.23
+192.168.x.y
 ```
 
 ## UI
@@ -223,4 +223,4 @@ This project uses or integrates with the following third-party projects:
 - websocket-sharp: WebSocket server/client library. Used for DG-Lab Socket transport.
 - Newtonsoft.Json: JSON serialization for DG-Lab Socket messages.
 - DG-Lab Socket protocol and DG-Lab app/device ecosystem: this project only integrates with public protocol behavior and does not own DG-Lab.
-- Casualties Unknown Demo: target game. This project is an unofficial mod and is not affiliated with the game developer.
+- Casualties Unknown: target game. This project is an unofficial mod and is not affiliated with the game developer.
