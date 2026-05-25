@@ -79,4 +79,8 @@
     <Compile Remove="src\DGLabWaveRouter.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+  </ItemGroup>
+
 </Project>

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DGLab.BepInEx.Protocol;
 using Newtonsoft.Json;
+using System.Collections.Generic;
 
 namespace DGLab.BepInEx.Network
 {
@@ -16,6 +17,7 @@ namespace DGLab.BepInEx.Network
         private readonly int _port;
         private readonly string _terminalId;
         private readonly object _sync = new object();
+        private readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
         private TcpListener _listener;
         private CancellationTokenSource _cts;
         private TcpClient _appClient;
@@ -183,17 +185,19 @@ namespace DGLab.BepInEx.Network
 
         private async Task SendMessageAsync(string jsonPayload)
         {
-            NetworkStream stream;
-            TcpClient client;
-            lock (_sync)
-            {
-                stream = _appStream;
-                client = _appClient;
-            }
-            if (stream == null || client == null || !client.Connected) return;
-
+            await _writeLock.WaitAsync();
+            var needsCloseNotify = false;
             try
             {
+                NetworkStream stream;
+                TcpClient client;
+                lock (_sync)
+                {
+                    stream = _appStream;
+                    client = _appClient;
+                }
+                if (stream == null || client == null || !client.Connected) return;
+
                 var payload = Encoding.UTF8.GetBytes(jsonPayload);
                 var frame = BuildTextFrame(payload);
                 await stream.WriteAsync(frame, 0, frame.Length);
@@ -201,8 +205,14 @@ namespace DGLab.BepInEx.Network
             catch (Exception ex)
             {
                 OnError?.Invoke(ex);
-                CloseAppConnection(true);
+                CloseAppConnection(false);
+                needsCloseNotify = true;
             }
+            finally
+            {
+                _writeLock.Release();
+            }
+            if (needsCloseNotify) OnClosed?.Invoke("app disconnected");
         }
 
         private async Task ReceiveLoop(NetworkStream stream, CancellationToken token)
@@ -414,7 +424,8 @@ namespace DGLab.BepInEx.Network
         private static IPAddress ParseBindAddress(string value)
         {
             if (string.IsNullOrWhiteSpace(value) || value == "0.0.0.0") return IPAddress.Any;
-            if (value == "127.0.0.1") return IPAddress.Loopback;
+            if (value == "127.0.0.1" || string.Equals(value, "localhost", StringComparison.OrdinalIgnoreCase)) return IPAddress.Loopback;
+            if (IPAddress.TryParse(value, out var parsed)) return parsed;
             return IPAddress.Any;
         }
 

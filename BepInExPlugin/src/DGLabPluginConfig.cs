@@ -20,6 +20,9 @@ namespace DGLab.BepInEx
         private ConfigEntry<bool> _refreshEmbeddedTerminalIdOnStart;
         private ConfigEntry<bool> _invalidateQrOnDisconnect;
         private ConfigEntry<string> _serverUrl;
+        private ConfigEntry<string> _externalBackendProfile;
+        private ConfigEntry<string> _officialSocketUrl;
+        private ConfigEntry<string> _thirdPartyControllerUrl;
         private ConfigEntry<string> _qrWebSocketUrl;
         private ConfigEntry<bool> _enableQrOutput;
         private ConfigEntry<bool> _enableMenu;
@@ -56,6 +59,7 @@ namespace DGLab.BepInEx
         private ConfigEntry<bool> _menuAlwaysVisible;
         private ConfigEntry<bool> _menuShowOnStart;
         private ConfigEntry<KeyCode> _menuToggleKey;
+        private ConfigEntry<bool> _menuToggleAltRequired;
         private ConfigEntry<string> _uiLanguage;
         private ConfigEntry<bool> _miniOverlayEnabled;
         private ConfigEntry<string> _channelABodyParts;
@@ -81,7 +85,10 @@ namespace DGLab.BepInEx
             _embeddedTerminalId = Config.Bind("Network", "EmbeddedTerminalId", "", Text("Terminal ID used in the embedded QR path. Usually regenerated when the backend starts.", "内置二维码路径使用的终端 ID，通常在后端启动时重新生成。"));
             _refreshEmbeddedTerminalIdOnStart = Config.Bind("Network", "RefreshEmbeddedTerminalIdOnStart", true, Text("Generate a new embedded terminal ID whenever the embedded backend starts or restarts.", "每次内置后端启动或重启时生成新的终端 ID。"));
             _invalidateQrOnDisconnect = Config.Bind("Network", "InvalidateQrOnDisconnect", true, Text("Generate a new embedded terminal ID when the phone disconnects, invalidating old QR codes.", "手机断开时生成新的终端 ID，使旧二维码失效。"));
-            _serverUrl = Config.Bind("Network", "ServerUrl", "ws://127.0.0.1:9999", Text("External DG-Lab WebSocket backend URL. Used only when UseEmbeddedServer is false.", "外部 DG-Lab WebSocket 后端地址。仅在 UseEmbeddedServer 为 false 时使用。"));
+            _serverUrl = Config.Bind("Network", "ServerUrl", "ws://127.0.0.1:9999", Text("Legacy external backend URL (kept for compatibility). Prefer OfficialSocketUrl or ThirdPartyControllerUrl.", "兼容旧版的外部后端地址。建议改用 OfficialSocketUrl 或 ThirdPartyControllerUrl。"));
+            _externalBackendProfile = Config.Bind("Network", "ExternalBackendProfile", "ThirdPartyController", Text("External backend profile: OfficialSocket or ThirdPartyController.", "外部后端类型：OfficialSocket 或 ThirdPartyController。"));
+            _officialSocketUrl = Config.Bind("Network", "OfficialSocketUrl", "", Text("Official DG-Lab Socket backend URL. Used when ExternalBackendProfile is OfficialSocket.", "官方 DG-Lab Socket 后端地址。ExternalBackendProfile 为 OfficialSocket 时使用。"));
+            _thirdPartyControllerUrl = Config.Bind("Network", "ThirdPartyControllerUrl", "ws://127.0.0.1:9999", Text("Third-party controller backend URL. Used when ExternalBackendProfile is ThirdPartyController.", "第三方控制器后端地址。ExternalBackendProfile 为 ThirdPartyController 时使用。"));
             _qrWebSocketUrl = Config.Bind("Network", "QrWebSocketUrl", "", Text("Optional WebSocket URL embedded in the DG-Lab scan QR. Leave empty to use the active backend URL.", "可选：写入 DG-Lab 扫码二维码的 WebSocket 地址。留空时使用当前后端地址。"));
             _enableQrOutput = Config.Bind("Network", "EnableQrOutput", true, Text("Generate a local QR PNG whenever the scan URL is available or changes.", "扫码地址可用或变化时生成本地二维码 PNG。"));
             _enableMenu = Config.Bind("UI", "EnableMenu", true, Text("Enable the in-game IMGUI control menu and compact status overlay.", "启用游戏内 IMGUI 控制菜单和迷你状态悬浮窗。"));
@@ -165,7 +172,8 @@ namespace DGLab.BepInEx
         {
             _menuAlwaysVisible = _advancedConfig.Bind("UI", "MenuAlwaysVisible", false, Text("Always show the main menu.", "始终显示主菜单。"));
             _menuShowOnStart = _advancedConfig.Bind("UI", "MenuShowOnStart", false, Text("Legacy setting. The main menu no longer opens automatically; use F10.", "旧设置。主菜单不再自动打开；请使用 F10。"));
-            _menuToggleKey = _advancedConfig.Bind("UI", "MenuToggleKey", KeyCode.F10, Text("Menu toggle key. Single key only; Alt combinations are not used.", "菜单切换键。仅单键，不使用 Alt 组合键。"));
+            _menuToggleKey = _advancedConfig.Bind("UI", "MenuToggleKey", KeyCode.F10, Text("Menu toggle key. Use with Alt if MenuToggleAltRequired is true.", "菜单切换键。若启用 MenuToggleAltRequired，则需配合 Alt 使用。"));
+            _menuToggleAltRequired = _advancedConfig.Bind("UI", "MenuToggleAltRequired", false, Text("Require Alt + MenuToggleKey to toggle the menu.", "要求 Alt + 菜单切换键 才能开关菜单。"));
             _uiLanguage = _advancedConfig.Bind("UI", "Language", "English", Text("UI language: English or Chinese.", "界面语言：English 或 Chinese。"));
             _miniOverlayEnabled = _advancedConfig.Bind("UI", "MiniOverlayEnabled", true, Text("Show a persistent compact status window. Controls stay in the main menu.", "显示常驻迷你状态悬浮窗。控制项只保留在主菜单。"));
         }

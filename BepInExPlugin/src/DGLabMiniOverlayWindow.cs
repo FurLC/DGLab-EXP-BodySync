@@ -7,6 +7,7 @@ namespace DGLab.BepInEx
         private const int WindowId = 54643322;
         private readonly DGLabPlugin _owner;
         private Rect _rect;
+        private GUIStyle _wrappedLabelStyle;
 
         public DGLabMiniOverlayWindow(DGLabPlugin owner)
         {
@@ -22,13 +23,14 @@ namespace DGLab.BepInEx
 
         private void Draw(int id)
         {
+            if (_wrappedLabelStyle == null)
+                _wrappedLabelStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
+
             const float x = 10f;
             const float width = 290f;
             var y = 22f;
             var outputText = _owner.T("Last output", "最近输出") + ": " + _owner.LastOutputEventText;
             var conditionText = _owner.T("Conditions", "状态层") + ": " + _owner.ActiveConditionsText;
-            var outputStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
-            var conditionStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
 
             GUI.Label(new Rect(x, y, 240f, 20f), _owner.T("Mode", "模式") + ": " + _owner.BackendModeText);
             y += 20f;
@@ -38,11 +40,11 @@ namespace DGLab.BepInEx
             y += 20f;
             GUI.Label(new Rect(x, y, width, 20f), _owner.T("Limit", "上限") + ": A " + _owner.MaxStrengthAText + " / B " + _owner.MaxStrengthBText);
             y += 20f;
-            var outputHeight = Mathf.Clamp(outputStyle.CalcHeight(new GUIContent(outputText), width), 20f, 88f);
-            GUI.Label(new Rect(x, y, width, outputHeight), outputText, outputStyle);
+            var outputHeight = Mathf.Clamp(_wrappedLabelStyle.CalcHeight(new GUIContent(outputText), width), 20f, 88f);
+            GUI.Label(new Rect(x, y, width, outputHeight), outputText, _wrappedLabelStyle);
             y += outputHeight + 4f;
-            var conditionHeight = Mathf.Clamp(conditionStyle.CalcHeight(new GUIContent(conditionText), width), 20f, 120f);
-            GUI.Label(new Rect(x, y, width, conditionHeight), conditionText, conditionStyle);
+            var conditionHeight = Mathf.Clamp(_wrappedLabelStyle.CalcHeight(new GUIContent(conditionText), width), 20f, 120f);
+            GUI.Label(new Rect(x, y, width, conditionHeight), conditionText, _wrappedLabelStyle);
             y += conditionHeight + 10f;
 
             _rect.height = Mathf.Clamp(y, 148f, 260f);

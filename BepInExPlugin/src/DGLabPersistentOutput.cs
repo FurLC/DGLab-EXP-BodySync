@@ -8,6 +8,7 @@ namespace DGLab.BepInEx
         private readonly DGLabClient _client;
         private readonly WaveSelector _waveSelector;
         private readonly DGLabOutputState _state;
+        private readonly object _lock = new object();
         private readonly Dictionary<string, PersistentState> _states = new Dictionary<string, PersistentState>();
 
         private sealed class PersistentState
@@ -27,43 +28,42 @@ namespace DGLab.BepInEx
 
         public void Start(string key, string[] wave, int durationSeconds)
         {
-            if (wave == null || wave.Length == 0 || durationSeconds <= 0)
+            if (wave == null || wave.Length == 0 || durationSeconds <= 0) return;
+            lock (_lock)
             {
-                return;
+                _states[key] = new PersistentState
+                {
+                    Wave = wave,
+                    DurationSeconds = durationSeconds,
+                    NextSendTime = 0f,
+                    Active = true
+                };
             }
-
-            _states[key] = new PersistentState
-            {
-                Wave = wave,
-                DurationSeconds = durationSeconds,
-                NextSendTime = 0f,
-                Active = true
-            };
         }
 
         public void Stop(string key)
         {
-            if (_states.TryGetValue(key, out var state))
+            lock (_lock)
             {
-                state.Active = false;
+                if (_states.TryGetValue(key, out var state)) state.Active = false;
             }
         }
 
         public void Tick()
         {
             var now = UnityEngine.Time.time;
-            foreach (var kvp in _states)
+            KeyValuePair<string, PersistentState>[] snapshot;
+            lock (_lock)
+            {
+                snapshot = new KeyValuePair<string, PersistentState>[_states.Count];
+                var idx = 0;
+                foreach (var kvp in _states) snapshot[idx++] = kvp;
+            }
+
+            foreach (var kvp in snapshot)
             {
                 var state = kvp.Value;
-                if (!state.Active)
-                {
-                    continue;
-                }
-
-                if (now < state.NextSendTime)
-                {
-                    continue;
-                }
+                if (!state.Active || now < state.NextSendTime) continue;
 
                 var selectedWave = _waveSelector != null ? _waveSelector(kvp.Key, state.Wave) : state.Wave;
                 _state?.SetWave(kvp.Key, selectedWave == state.Wave ? "default" : "timed");

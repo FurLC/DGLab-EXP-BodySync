@@ -100,6 +100,11 @@ namespace DGLab.BepInEx
             return !string.IsNullOrWhiteSpace(clientId);
         }
 
+        public void InvalidateAddressCache()
+        {
+            _cachedEmbeddedAdvertiseAddress = null;
+        }
+
         private string GetEmbeddedAdvertiseAddress()
         {
             var configuredAddress = _embeddedServerAddress();

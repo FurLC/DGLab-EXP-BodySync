@@ -31,7 +31,6 @@ namespace DGLab.BepInEx
         private bool _runtimeEmbeddedBackend;
         private bool _autoBackendForcedEmbedded;
         private bool _externalProbeActive;
-        private bool _fallbackToEmbeddedAfterDisconnect;
         private float _externalProbeDeadline = -1f;
         private bool _updateLogged;
         private bool _startLogged;
@@ -76,9 +75,10 @@ namespace DGLab.BepInEx
 
             _log.LogInfo("DG-Lab plugin initializing.");
             _log.LogInfo("DG-Lab IMGUI menu config: Enabled=" + _enableMenu.Value + ", AlwaysVisible=" + _menuAlwaysVisible.Value + ", MenuStartsClosed=True, MenuToggleKey=" + _menuToggleKey.Value);
-            _log.LogInfo("DG-Lab menu toggle uses single key only. Default/emergency: F10. Alt hotkeys disabled.");
+            _log.LogInfo("DG-Lab menu toggle default/emergency key: F10. Optional Alt modifier is configurable.");
             _log.LogInfo("DG-Lab forced menu diagnostics enabled.");
             _log.LogInfo(_useEmbeddedServer.Value ? "DG-Lab embedded backend mode enabled. A QR will be generated for the phone app to connect to this game." : "DG-Lab external backend mode enabled. Start the backend before launching the game.");
+            _log.LogInfo("DG-Lab external backend profile: " + _externalBackendProfile.Value + ", URL=" + ResolveExternalBackendUrl());
             if (_debugLog.Value)
             {
                 _log.LogInfo("DG-Lab debug logging enabled.");
@@ -102,7 +102,7 @@ namespace DGLab.BepInEx
                 () => _embeddedTerminalId.Value,
                 () => _embeddedServerAddress.Value,
                 () => _embeddedServerPort.Value,
-                () => _serverUrl.Value,
+                () => ResolveExternalBackendUrl(),
                 () => _qrWebSocketUrl.Value,
                 () => Path.Combine(Paths.BepInExRootPath, "cache", "DG-Lab"));
             InitializeClient();
@@ -148,8 +148,6 @@ namespace DGLab.BepInEx
                 _runtimeEmbeddedBackend = ShouldStartEmbeddedBackend();
                 _externalProbeActive = _autoSelectBackend.Value && !_runtimeEmbeddedBackend;
                 _externalProbeDeadline = _externalProbeActive ? Time.realtimeSinceStartup + _externalBackendProbeSeconds.Value : -1f;
-                _fallbackToEmbeddedAfterDisconnect = false;
-
                 if (_runtimeEmbeddedBackend)
                 {
                     RefreshEmbeddedTerminalIdIfNeeded(true);
@@ -157,7 +155,7 @@ namespace DGLab.BepInEx
                 }
                 else
                 {
-                    _client = new DGLabClient(_serverUrl.Value);
+                    _client = new DGLabClient(ResolveExternalBackendUrl());
                 }
 
                 _client.OnConnected += () =>
@@ -169,7 +167,7 @@ namespace DGLab.BepInEx
                 _client.OnError += ex => _log.LogError(ex);
                 _client.OnMessage += HandleMessage;
                 _client.Connect();
-                _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded WebSocket backend initialized: 0.0.0.0:" + _embeddedServerPort.Value : "DG-Lab external WebSocket client initialized: " + _serverUrl.Value);
+                _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded WebSocket backend initialized: 0.0.0.0:" + _embeddedServerPort.Value : "DG-Lab external WebSocket client initialized: " + ResolveExternalBackendUrl());
 
                 _persistent = new DGLabPersistentOutput(_client, SelectWaveForTime, _outputState);
                 _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
@@ -443,6 +441,24 @@ namespace DGLab.BepInEx
         }
 
         internal string ServerUrl => _serverUrl != null ? _serverUrl.Value : "<not loaded>";
+        internal string ExternalBackendProfileText => _externalBackendProfile != null ? _externalBackendProfile.Value : "<not loaded>";
+        internal string ExternalBackendUrlText => ResolveExternalBackendUrl();
+
+        internal bool IsOfficialSocketProfile => _externalBackendProfile != null &&
+            string.Equals(_externalBackendProfile.Value, "OfficialSocket", StringComparison.OrdinalIgnoreCase);
+
+        internal void SwitchExternalBackendProfile(string profile)
+        {
+            if (_externalBackendProfile == null) return;
+            _externalBackendProfile.Value = profile;
+            _advancedConfig.Save();
+        }
+
+        internal bool MenuToggleAltRequired
+        {
+            get => _menuToggleAltRequired != null && _menuToggleAltRequired.Value;
+            set { if (_menuToggleAltRequired != null) _menuToggleAltRequired.Value = value; }
+        }
 
         internal string ClientIdText => _client != null && !string.IsNullOrEmpty(_client.ClientId) ? _client.ClientId : "<not bound>";
 
@@ -795,7 +811,8 @@ namespace DGLab.BepInEx
             }
 
             _lastReconnectTime = Time.realtimeSinceStartup;
-            if (_autoSelectBackend.Value) _autoBackendForcedEmbedded = false;
+            if (_autoSelectBackend.Value && !_runtimeEmbeddedBackend) _autoBackendForcedEmbedded = false;
+            _qrService?.InvalidateAddressCache();
             InitializeClient();
         }
 
@@ -856,14 +873,9 @@ namespace DGLab.BepInEx
 
             _externalProbeActive = false;
             _externalProbeDeadline = -1f;
-            _fallbackToEmbeddedAfterDisconnect = true;
             _log.LogWarning("DG-Lab external Socket V2 backend did not provide a clientId in time. Falling back to embedded QR backend.");
             DisconnectClientForReconnect();
-            if (_fallbackToEmbeddedAfterDisconnect)
-            {
-                _fallbackToEmbeddedAfterDisconnect = false;
-                StartEmbeddedFallback("external backend probe timed out");
-            }
+            StartEmbeddedFallback("external backend probe timed out");
         }
 
         private void StartEmbeddedFallback(string reason)
@@ -872,7 +884,6 @@ namespace DGLab.BepInEx
             _autoBackendForcedEmbedded = true;
             _externalProbeActive = false;
             _externalProbeDeadline = -1f;
-            _fallbackToEmbeddedAfterDisconnect = false;
             _pendingReconnectTime = Time.realtimeSinceStartup + 0.2f;
             _log.LogWarning("DG-Lab auto backend fallback to embedded mode: " + reason + ".");
         }
@@ -938,7 +949,7 @@ namespace DGLab.BepInEx
 
         private void HandleMessage(DGLab.BepInEx.Protocol.DGLabMessage msg)
         {
-            _log.LogInfo("DG-Lab msg: " + msg.type + " | " + msg.message);
+            if (_debugLog.Value) _log.LogInfo("DG-Lab msg: " + msg.type + " | " + msg.message);
             if (!_enableQrOutput.Value) return;
 
             if (msg.type == "bind" && !string.IsNullOrEmpty(msg.clientId))
@@ -960,11 +971,12 @@ namespace DGLab.BepInEx
                 if (captured == KeyCode.None) return false;
 
                 _menuToggleKey.Value = captured;
+                _menuToggleAltRequired.Value = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || IsNativeKeyDown(0x12);
                 _waitingForMenuKeyBind = false;
                 _nativeConfiguredKeyWasDown = false;
                 _nativeF10WasDown = false;
                 _lastMenuToggleTime = Time.realtimeSinceStartup;
-                _log.LogInfo("DG-Lab menu toggle key changed to " + captured + ".");
+                _log.LogInfo("DG-Lab menu toggle key changed to " + captured + ". Alt required=" + _menuToggleAltRequired.Value + ".");
                 return false;
             }
 
@@ -988,6 +1000,12 @@ namespace DGLab.BepInEx
 
             if (!pressed) return false;
 
+            if (_menuToggleAltRequired != null && _menuToggleAltRequired.Value)
+            {
+                var altDownNow = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || IsNativeKeyDown(0x12);
+                if (!altDownNow) return false;
+            }
+
             _lastMenuToggleTime = Time.realtimeSinceStartup;
             LogMenuDebug("DG-Lab input accepted: F10/config single key.");
             return true;
@@ -1003,6 +1021,30 @@ namespace DGLab.BepInEx
                 if (IsBindableMenuKey(key) && Input.GetKeyDown(key)) return key;
             }
 
+            // Detect function keys and navigation keys via native API that Unity may miss
+            int[] nativeExtras = { 0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x7B, // F1-F12
+                                   0x2D,0x2E,0x24,0x23,0x21,0x22 }; // Insert,Delete,Home,End,PgUp,PgDn
+            foreach (var vk in nativeExtras)
+            {
+                if ((GetAsyncKeyState(vk) & 0x8001) == 0x8001)
+                {
+                    var kc = VirtualKeyToKeyCode(vk);
+                    if (kc != KeyCode.None && IsBindableMenuKey(kc)) return kc;
+                }
+            }
+
+            return KeyCode.None;
+        }
+
+        private static KeyCode VirtualKeyToKeyCode(int vk)
+        {
+            if (vk >= 0x70 && vk <= 0x7B) return KeyCode.F1 + (vk - 0x70);
+            if (vk == 0x2D) return KeyCode.Insert;
+            if (vk == 0x2E) return KeyCode.Delete;
+            if (vk == 0x24) return KeyCode.Home;
+            if (vk == 0x23) return KeyCode.End;
+            if (vk == 0x21) return KeyCode.PageUp;
+            if (vk == 0x22) return KeyCode.PageDown;
             return KeyCode.None;
         }
 
@@ -1272,6 +1314,23 @@ namespace DGLab.BepInEx
 
             _pendingReconnectTime = Time.realtimeSinceStartup + 1f;
             _log?.LogWarning("DG-Lab embedded backend reconnect scheduled: " + reason);
+        }
+
+        private string ResolveExternalBackendUrl()
+        {
+            if (_externalBackendProfile == null) return _serverUrl != null ? _serverUrl.Value : "";
+
+            var profile = (_externalBackendProfile.Value ?? string.Empty).Trim();
+            if (profile.Equals("OfficialSocket", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_officialSocketUrl != null && !string.IsNullOrWhiteSpace(_officialSocketUrl.Value)) return _officialSocketUrl.Value.Trim();
+            }
+            else
+            {
+                if (_thirdPartyControllerUrl != null && !string.IsNullOrWhiteSpace(_thirdPartyControllerUrl.Value)) return _thirdPartyControllerUrl.Value.Trim();
+            }
+
+            return _serverUrl != null ? _serverUrl.Value : string.Empty;
         }
     }
 }

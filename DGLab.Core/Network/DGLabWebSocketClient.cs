@@ -8,7 +8,9 @@ namespace DGLab.BepInEx.Network
     public sealed class DGLabWebSocketClient : IDGLabTransport
     {
         private readonly Uri _serverUri;
+        private readonly object _socketLock = new object();
         private WebSocket _socket;
+        private int _connectionGeneration;
 
         public event Action<string> OnRawMessage;
         public event Action<DGLabMessage> OnMessage;
@@ -16,8 +18,10 @@ namespace DGLab.BepInEx.Network
         public event Action<string> OnClosed;
         public event Action<Exception> OnError;
 
-        public string ClientId { get; private set; }
-        public string TargetId { get; private set; }
+        private volatile string _clientId;
+        private volatile string _targetId;
+        public string ClientId => _clientId;
+        public string TargetId => _targetId;
 
         public DGLabWebSocketClient(string serverUrl)
         {
@@ -28,28 +32,43 @@ namespace DGLab.BepInEx.Network
         {
             Disconnect();
 
-            _socket = new WebSocket(_serverUri.ToString());
-            _socket.OnOpen += (_, __) => OnConnected?.Invoke();
-            _socket.OnClose += (_, e) => OnClosed?.Invoke(e.Reason);
-            _socket.OnError += (_, e) => OnError?.Invoke(e.Exception ?? new Exception(e.Message));
-            _socket.OnMessage += (_, e) => HandleMessage(e);
-            _socket.ConnectAsync();
+            WebSocket socket;
+            int generation;
+            lock (_socketLock)
+            {
+                generation = ++_connectionGeneration;
+                socket = new WebSocket(_serverUri.ToString());
+                _socket = socket;
+            }
+
+            socket.OnOpen += (_, __) => OnConnected?.Invoke();
+            socket.OnClose += (_, e) => OnClosed?.Invoke(e.Reason);
+            socket.OnError += (_, e) => OnError?.Invoke(e.Exception ?? new Exception(e.Message));
+            socket.OnMessage += (_, e) => HandleMessage(e, generation);
+            socket.ConnectAsync();
         }
 
         public void Disconnect()
         {
-            if (_socket == null) return;
-
-            _socket.CloseAsync();
-            _socket = null;
+            WebSocket socket;
+            lock (_socketLock)
+            {
+                socket = _socket;
+                _socket = null;
+                _connectionGeneration++;
+            }
+            if (socket == null) return;
+            try { socket.CloseAsync(); } catch { }
         }
 
         public void Send(object payload)
         {
-            if (_socket == null || _socket.ReadyState != WebSocketState.Open) return;
+            WebSocket socket;
+            lock (_socketLock) { socket = _socket; }
+            if (socket == null || socket.ReadyState != WebSocketState.Open) return;
 
             var json = JsonConvert.SerializeObject(payload);
-            _socket.SendAsync(json, null);
+            socket.SendAsync(json, null);
         }
 
         public void SendStrengthSet(int channel, int strength)
@@ -90,9 +109,14 @@ namespace DGLab.BepInEx.Network
             Disconnect();
         }
 
-        private void HandleMessage(MessageEventArgs e)
+        private void HandleMessage(MessageEventArgs e, int generation)
         {
             if (!e.IsText) return;
+
+            lock (_socketLock)
+            {
+                if (generation != _connectionGeneration) return;
+            }
 
             var payload = e.Data;
             OnRawMessage?.Invoke(payload);
@@ -102,8 +126,8 @@ namespace DGLab.BepInEx.Network
                 var msg = JsonConvert.DeserializeObject<DGLabMessage>(payload);
                 if (msg == null) return;
 
-                if (!string.IsNullOrEmpty(msg.clientId)) ClientId = msg.clientId;
-                if (!string.IsNullOrEmpty(msg.targetId)) TargetId = msg.targetId;
+                if (!string.IsNullOrEmpty(msg.clientId)) _clientId = msg.clientId;
+                if (!string.IsNullOrEmpty(msg.targetId)) _targetId = msg.targetId;
                 OnMessage?.Invoke(msg);
             }
             catch (Exception ex)

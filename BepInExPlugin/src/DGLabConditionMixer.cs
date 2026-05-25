@@ -620,15 +620,22 @@ namespace DGLab.BepInEx
             if (active == null || active.Count == 0) return DGLabWaveLibrary.GentlePulse;
             if (active.Count == 1) return active[0].Wave;
 
-            var length = active.Max(layer => layer.Wave.Length);
-            var mixed = new string[length];
-            for (var i = 0; i < length; i++)
+            const int MaxFrames = 100;
+            var totalWeight = 0f;
+            for (var i = 0; i < active.Count; i++) totalWeight += active[i].Severity;
+            if (totalWeight <= 0f) totalWeight = active.Count;
+
+            var result = new List<string>(MaxFrames);
+            for (var i = 0; i < active.Count && result.Count < MaxFrames; i++)
             {
-                var layer = active[i % active.Count];
-                mixed[i] = layer.Wave[i % layer.Wave.Length];
+                var layer = active[i];
+                var share = Mathf.Max(1, Mathf.RoundToInt(layer.Wave.Length * (layer.Severity / totalWeight) * active.Count));
+                share = Mathf.Min(share, MaxFrames - result.Count);
+                for (var j = 0; j < share; j++)
+                    result.Add(layer.Wave[j % layer.Wave.Length]);
             }
 
-            return mixed;
+            return result.ToArray();
         }
     }
 }

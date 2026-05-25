@@ -10,7 +10,7 @@ namespace DGLab.BepInEx
     public static class DamageHooks
     {
         private static ManualLogSource _log;
-        private static DGLabClient _client;
+        private static volatile DGLabClient _client;
         private static ConfigEntry<float> _minDamage;
         private static ConfigEntry<float> _damageCooldownSeconds;
         private static ConfigEntry<float> _impactMinForce;
@@ -19,9 +19,9 @@ namespace DGLab.BepInEx
         private static ConfigEntry<int> _dislocateIntensity;
         private static ConfigEntry<int> _dismemberIntensity;
         private static ConfigEntry<int> _selfHarmIntensity;
-        private static DGLabWaveRouter _waveRouter;
-        private static DGLabOutputState _state;
-        private static DGLabStrengthEnvelope _strengthEnvelope;
+        private static volatile DGLabWaveRouter _waveRouter;
+        private static volatile DGLabOutputState _state;
+        private static volatile DGLabStrengthEnvelope _strengthEnvelope;
         private static readonly Dictionary<string, float> _lastTriggerByKey = new Dictionary<string, float>();
 
         public static void Initialize(
