@@ -168,7 +168,7 @@ The main menu can refresh the backend, refresh the QR, open the QR PNG, and disc
 If the QR uses a wrong IP such as a virtual adapter address, set `Network/EmbeddedServerAddress` manually to your LAN address, for example:
 
 ```text
-192.168.x.y
+192.168.x.x
 ```
 
 ## UI
