@@ -1,0 +1,82 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>DGLab.BepInEx</AssemblyName>
+    <RootNamespace>DGLab.BepInEx</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DGLab.Core\DGLab.Core.csproj" />
+    <ProjectReference Include="..\DGLab.Game\DGLab.Game.csproj" />
+
+    <Reference Include="QRCoder">
+      <HintPath>lib\QRCoder.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+
+    <Reference Include="BepInEx">
+      <HintPath>lib\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>lib\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>lib\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>lib\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>lib\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>lib\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>lib\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>lib\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>E:\Steam\steamapps\common\Casualties Unknown Demo\CasualtiesUnknown_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>lib\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>E:\Steam\steamapps\common\Casualties Unknown Demo\CasualtiesUnknown_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="src\DGLabClient.cs" />
+    <Compile Remove="src\DGLabEmbeddedWebSocketServer.cs" />
+    <Compile Remove="src\DGLabMessages.cs" />
+    <Compile Remove="src\DGLabWebSocketClient.cs" />
+    <Compile Remove="src\IDGLabTransport.cs" />
+    <Compile Remove="src\DamageHooks.cs" />
+    <Compile Remove="src\DGLabBodyBinding.cs" />
+    <Compile Remove="src\DGLabConditionMixer.cs" />
+    <Compile Remove="src\DGLabOutputState.cs" />
+    <Compile Remove="src\DGLabPersistentOutput.cs" />
+    <Compile Remove="src\DGLabStrengthEnvelope.cs" />
+    <Compile Remove="src\DGLabWaveLibrary.cs" />
+    <Compile Remove="src\DGLabWaveRouter.cs" />
+  </ItemGroup>
+
+</Project>

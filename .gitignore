@@ -1,0 +1,57 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+.vs/
+.vscode/.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet/cache outputs
+packages/
+*.nupkg
+
+# Runtime logs and generated config
+*.log
+LogOutput.log
+*.cfg
+*.cfg.bak
+*.old
+
+# Generated QR images
+dglab-qr.png
+*.qr.png
+
+# Local deployment/package folders
+release/
+releases/
+dist/
+artifacts/
+publish/
+
+# Game and Unity reference binaries
+**/Assembly-CSharp.dll
+**/UnityEngine*.dll
+**/BepInEx.dll
+**/0Harmony.dll
+**/Mono.Cecil*.dll
+**/TextMeshPro*.dll
+
+# Third-party binary dependencies
+# Keep explicit allowlist for bundled runtime deps; avoid committing debug symbols
+BepInExPlugin/lib/*.dll
+BepInExPlugin/lib/*.xml
+BepInExPlugin/lib/*.pdb
+!BepInExPlugin/lib/QRCoder.dll
+!BepInExPlugin/lib/websocket-sharp.dll
+!BepInExPlugin/lib/Newtonsoft.Json.dll
+
+# Keep optional documentation in lib if added later
+!BepInExPlugin/lib/README.md
+!BepInExPlugin/lib/README.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

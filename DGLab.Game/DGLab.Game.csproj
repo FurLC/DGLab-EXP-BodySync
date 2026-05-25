@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>DGLab.Game</AssemblyName>
+    <RootNamespace>DGLab.BepInEx</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DGLab.Core\DGLab.Core.csproj" />
+
+    <Compile Include="..\BepInExPlugin\src\DamageHooks.cs" Link="Game\DamageHooks.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabBodyBinding.cs" Link="Game\DGLabBodyBinding.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabConditionMixer.cs" Link="Game\DGLabConditionMixer.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabOutputState.cs" Link="Game\DGLabOutputState.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabPersistentOutput.cs" Link="Game\DGLabPersistentOutput.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabStrengthEnvelope.cs" Link="Game\DGLabStrengthEnvelope.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabWaveLibrary.cs" Link="Game\DGLabWaveLibrary.cs" />
+    <Compile Include="..\BepInExPlugin\src\DGLabWaveRouter.cs" Link="Game\DGLabWaveRouter.cs" />
+
+    <Reference Include="BepInEx">
+      <HintPath>..\BepInExPlugin\lib\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>..\BepInExPlugin\lib\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>..\BepInExPlugin\lib\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>..\BepInExPlugin\lib\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>..\BepInExPlugin\lib\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>E:\Steam\steamapps\common\Casualties Unknown Demo\CasualtiesUnknown_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
