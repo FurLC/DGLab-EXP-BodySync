@@ -2,7 +2,7 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-A BepInEx 5 mod for [Casualties Unknown](https://store.steampowered.com/app/4576490/) that maps character injuries, body states, and body-part changes to DG-Lab Socket v2 output.
+A BepInEx 5 mod for [Casualties Unknown](https://store.steampowered.com/app/4576490/) that maps character injuries, body states, and body-part changes to DG-Lab output.
 
 > [!WARNING]
 > This mod maps in-game injuries and body states into simulated DG-Lab waveforms and strength changes. Start with low A/B strength limits, keep the DG-Lab app or device stop controls reachable, and stop immediately if you feel pain, numbness, dizziness, panic, skin irritation, or anything wrong.
