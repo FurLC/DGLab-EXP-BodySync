@@ -2,7 +2,7 @@
 
 [English](./README.md) | 简体中文
 
-面向 [Casualties Unknown](https://store.steampowered.com/app/4576490/) 的 BepInEx 5 模组，将角色伤害、身体状态和部位变化转换为 DG-Lab Socket v2 输出。
+面向 [Casualties Unknown](https://store.steampowered.com/app/4576490/) 的 BepInEx 5 模组，将角色伤害、身体状态和部位变化转换为 DG-Lab 输出。
 
 > [!WARNING]
 > 这个模组会根据游戏里的受伤和身体状态，让 DG-Lab 设备输出模拟对应体感的波形和强度。首次使用请把 A/B 强度上限调低，并确保 DG-Lab App 或设备停止控制随时可触达。出现疼痛、麻木、头晕、恐慌、皮肤不适等异常感受时请立即停止。
