@@ -291,6 +291,441 @@ namespace DGLab.BepInEx
             "0A0A0A0A28282828"
         };
 
+        // Agony surge: dense, uneven spikes for overwhelming pain
+        public static readonly string[] AgonySurge =
+        {
+            "505050508C8C8C8C",
+            "6464646496969696",
+            "3C3C3C3C78787878",
+            "5A5A5A5A96969696",
+            "282828286E6E6E6E",
+            "646464648C8C8C8C",
+            "1414141446464646",
+            "5050505082828282"
+        };
+
+        // Minor bleed: faint draining pulse
+        public static readonly string[] MinorBleedDrain =
+        {
+            "0A0A0A0A28282828",
+            "0A0A0A0A32323232",
+            "141414143C3C3C3C",
+            "0A0A0A0A28282828",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A28282828"
+        };
+
+        // Heavy bleed: stronger ebbing pulse
+        public static readonly string[] HeavyBleedDrain =
+        {
+            "1414141446464646",
+            "282828285A5A5A5A",
+            "1E1E1E1E50505050",
+            "0A0A0A0A28282828",
+            "1414141446464646",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A14141414",
+            "0A0A0A0A28282828"
+        };
+
+        // Catastrophic bleed: rapid collapse-like draining
+        public static readonly string[] CatastrophicBleedDrain =
+        {
+            "2828282864646464",
+            "3C3C3C3C78787878",
+            "2828282864646464",
+            "141414143C3C3C3C",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A0A0A0A0A",
+            "1E1E1E1E50505050",
+            "0A0A0A0A14141414"
+        };
+
+        // Hypotension: soft, slow fading thumps
+        public static readonly string[] HypotensionFade =
+        {
+            "0A0A0A0A32323232",
+            "1414141446464646",
+            "0A0A0A0A28282828",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A14141414",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] SevereHypotensionFade =
+        {
+            "1414141446464646",
+            "0A0A0A0A28282828",
+            "0A0A0A0A14141414",
+            "1E1E1E1E50505050",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A0A0A0A0A",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        // Hypertension: tight pressure spikes, increasingly sharp
+        public static readonly string[] HypertensionPressure =
+        {
+            "1E1E1E1E50505050",
+            "282828285A5A5A5A",
+            "1E1E1E1E50505050",
+            "141414143C3C3C3C",
+            "282828285A5A5A5A",
+            "141414143C3C3C3C"
+        };
+
+        public static readonly string[] SevereHypertensionPressure =
+        {
+            "3232323264646464",
+            "4646464678787878",
+            "282828285A5A5A5A",
+            "5050505082828282",
+            "1E1E1E1E50505050",
+            "4646464678787878",
+            "282828285A5A5A5A"
+        };
+
+        // Breathing/oxygen patterns
+        public static readonly string[] MildHypoxiaFlutter =
+        {
+            "1E1E1E1E46464646",
+            "0A0A0A0A1E1E1E1E",
+            "2828282850505050",
+            "0A0A0A0A14141414",
+            "1E1E1E1E46464646",
+            "0A0A0A0A1E1E1E1E"
+        };
+
+        public static readonly string[] SuffocationGasp =
+        {
+            "464646466E6E6E6E",
+            "0A0A0A0A0A0A0A0A",
+            "5050505078787878",
+            "0A0A0A0A14141414",
+            "3C3C3C3C64646464",
+            "0A0A0A0A0A0A0A0A",
+            "464646466E6E6E6E",
+            "0A0A0A0A1E1E1E1E"
+        };
+
+        // Heart rhythm patterns
+        public static readonly string[] TachyHeartbeat =
+        {
+            "282828285A5A5A5A",
+            "1E1E1E1E50505050",
+            "0A0A0A0A0A0A0A0A",
+            "282828285A5A5A5A",
+            "1E1E1E1E50505050",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] FibrillationChaos =
+        {
+            "4646464678787878",
+            "141414143C3C3C3C",
+            "5050505082828282",
+            "0A0A0A0A1E1E1E1E",
+            "3232323264646464",
+            "5A5A5A5A8C8C8C8C",
+            "1E1E1E1E50505050",
+            "0A0A0A0A28282828"
+        };
+
+        // Infection / systemic illness patterns
+        public static readonly string[] PainfulInfectionCrawl =
+        {
+            "1414141432323232",
+            "1E1E1E1E46464646",
+            "2828282850505050",
+            "323232325A5A5A5A",
+            "2828282846464646",
+            "1E1E1E1E3C3C3C3C",
+            "1414141428282828"
+        };
+
+        public static readonly string[] SepsisPulse =
+        {
+            "282828285A5A5A5A",
+            "1414141432323232",
+            "3232323264646464",
+            "0A0A0A0A28282828",
+            "3C3C3C3C6E6E6E6E",
+            "1414141432323232",
+            "282828285A5A5A5A",
+            "0A0A0A0A1E1E1E1E"
+        };
+
+        public static readonly string[] RadiationSicknessRoll =
+        {
+            "141414143C3C3C3C",
+            "282828285A5A5A5A",
+            "3C3C3C3C64646464",
+            "2828282850505050",
+            "1E1E1E1E3C3C3C3C",
+            "0A0A0A0A28282828",
+            "141414143C3C3C3C"
+        };
+
+        // Temperature patterns: heat is rolling pressure, cold is prickling stutter
+        public static readonly string[] HeatWave =
+        {
+            "1414141432323232",
+            "1E1E1E1E46464646",
+            "323232325A5A5A5A",
+            "464646466E6E6E6E",
+            "323232325A5A5A5A",
+            "1E1E1E1E46464646"
+        };
+
+        public static readonly string[] ColdShiver =
+        {
+            "2828282850505050",
+            "0A0A0A0A14141414",
+            "323232325A5A5A5A",
+            "0A0A0A0A14141414",
+            "2828282850505050",
+            "0A0A0A0A1E1E1E1E",
+            "3C3C3C3C64646464",
+            "0A0A0A0A14141414"
+        };
+
+        public static readonly string[] SevereFatigueDrag =
+        {
+            "0A0A0A0A28282828",
+            "0A0A0A0A32323232",
+            "141414143C3C3C3C",
+            "0A0A0A0A28282828",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A14141414",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] PanicHeartbeat =
+        {
+            "3232323264646464",
+            "282828285A5A5A5A",
+            "0A0A0A0A14141414",
+            "4646464678787878",
+            "3232323264646464",
+            "0A0A0A0A1E1E1E1E",
+            "5050505082828282",
+            "282828285A5A5A5A"
+        };
+
+        public static readonly string[] DizzinessNerve =
+        {
+            "1E1E1E1E50505050",
+            "0A0A0A0A1E1E1E1E",
+            "3232323264646464",
+            "0A0A0A0A0A0A0A0A",
+            "282828285A5A5A5A",
+            "0A0A0A0A14141414"
+        };
+
+        public static readonly string[] ConfusionDrift =
+        {
+            "1414141446464646",
+            "0A0A0A0A14141414",
+            "282828285A5A5A5A",
+            "0A0A0A0A0A0A0A0A",
+            "1E1E1E1E50505050",
+            "0A0A0A0A28282828",
+            "0A0A0A0A14141414"
+        };
+
+        public static readonly string[] BrainInjuryJolt =
+        {
+            "4646464678787878",
+            "0A0A0A0A1E1E1E1E",
+            "3232323264646464",
+            "5050505082828282",
+            "0A0A0A0A28282828",
+            "3C3C3C3C6E6E6E6E",
+            "141414143C3C3C3C"
+        };
+
+        public static readonly string[] CardiacArrestDrop =
+        {
+            "5050505082828282",
+            "282828285A5A5A5A",
+            "0A0A0A0A14141414",
+            "0A0A0A0A0A0A0A0A",
+            "3C3C3C3C6E6E6E6E",
+            "0A0A0A0A0A0A0A0A",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] TraumaFlashback =
+        {
+            "2828282864646464",
+            "0A0A0A0A1E1E1E1E",
+            "3C3C3C3C78787878",
+            "141414143C3C3C3C",
+            "3232323264646464",
+            "0A0A0A0A28282828",
+            "4646464678787878",
+            "1414141432323232"
+        };
+
+        public static readonly string[] HemothoraxPressure =
+        {
+            "1E1E1E1E50505050",
+            "2828282864646464",
+            "141414143C3C3C3C",
+            "0A0A0A0A1E1E1E1E",
+            "282828285A5A5A5A",
+            "1E1E1E1E46464646"
+        };
+
+        public static readonly string[] BloodLossFade =
+        {
+            "1E1E1E1E50505050",
+            "1414141446464646",
+            "0A0A0A0A28282828",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A14141414",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] SepticShockWave =
+        {
+            "3C3C3C3C6E6E6E6E",
+            "1414141432323232",
+            "4646464678787878",
+            "0A0A0A0A28282828",
+            "5050505082828282",
+            "1E1E1E1E46464646",
+            "3232323264646464",
+            "0A0A0A0A1E1E1E1E"
+        };
+
+        public static readonly string[] GravelyIllWave =
+        {
+            "1E1E1E1E46464646",
+            "282828285A5A5A5A",
+            "3C3C3C3C6E6E6E6E",
+            "2828282850505050",
+            "1414141432323232",
+            "0A0A0A0A28282828",
+            "1414141446464646"
+        };
+
+        public static readonly string[] ModerateBleedDrain =
+        {
+            "0A0A0A0A32323232",
+            "1414141446464646",
+            "1E1E1E1E50505050",
+            "0A0A0A0A32323232",
+            "141414143C3C3C3C",
+            "0A0A0A0A28282828"
+        };
+
+        public static readonly string[] ModerateHypotensionFade =
+        {
+            "0A0A0A0A32323232",
+            "1E1E1E1E50505050",
+            "0A0A0A0A28282828",
+            "141414143C3C3C3C",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A14141414"
+        };
+
+        public static readonly string[] FatalHypotensionFade =
+        {
+            "1E1E1E1E50505050",
+            "0A0A0A0A14141414",
+            "0A0A0A0A0A0A0A0A",
+            "2828282864646464",
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A0A0A0A0A",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] ModerateHypertensionPressure =
+        {
+            "282828285A5A5A5A",
+            "3232323264646464",
+            "1E1E1E1E50505050",
+            "3232323264646464",
+            "282828285A5A5A5A",
+            "1E1E1E1E46464646"
+        };
+
+        public static readonly string[] FatalHypertensionPressure =
+        {
+            "5050505082828282",
+            "6464646496969696",
+            "3C3C3C3C78787878",
+            "5A5A5A5A8C8C8C8C",
+            "4646464678787878",
+            "6464646496969696",
+            "2828282864646464"
+        };
+
+        public static readonly string[] ModerateHypoxiaStutter =
+        {
+            "2828282850505050",
+            "0A0A0A0A14141414",
+            "323232325A5A5A5A",
+            "0A0A0A0A1E1E1E1E",
+            "2828282850505050",
+            "0A0A0A0A14141414"
+        };
+
+        public static readonly string[] FatalHypoxiaGasp =
+        {
+            "5050505082828282",
+            "0A0A0A0A0A0A0A0A",
+            "5A5A5A5A8C8C8C8C",
+            "0A0A0A0A14141414",
+            "4646464678787878",
+            "0A0A0A0A0A0A0A0A",
+            "5050505082828282",
+            "0A0A0A0A0A0A0A0A"
+        };
+
+        public static readonly string[] MildInfectionCrawl =
+        {
+            "0A0A0A0A1E1E1E1E",
+            "0A0A0A0A28282828",
+            "1414141432323232",
+            "1E1E1E1E3C3C3C3C",
+            "1414141432323232",
+            "0A0A0A0A28282828"
+        };
+
+        public static readonly string[] SevereInfectionCrawl =
+        {
+            "1E1E1E1E46464646",
+            "3232323264646464",
+            "282828285A5A5A5A",
+            "3C3C3C3C6E6E6E6E",
+            "2828282850505050",
+            "1E1E1E1E46464646"
+        };
+
+        public static readonly string[] SevereHeatWave =
+        {
+            "282828285A5A5A5A",
+            "3C3C3C3C6E6E6E6E",
+            "5050505082828282",
+            "4646464678787878",
+            "3C3C3C3C6E6E6E6E",
+            "282828285A5A5A5A"
+        };
+
+        public static readonly string[] SevereColdShiver =
+        {
+            "3C3C3C3C64646464",
+            "0A0A0A0A14141414",
+            "4646464678787878",
+            "0A0A0A0A14141414",
+            "5050505082828282",
+            "0A0A0A0A1E1E1E1E",
+            "3C3C3C3C64646464",
+            "0A0A0A0A14141414"
+        };
+
         // Heavy shock: sustained high-intensity convulsion
         public static readonly string[] HeavyShock =
         {

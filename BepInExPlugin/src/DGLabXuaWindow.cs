@@ -180,7 +180,7 @@ namespace DGLab.BepInEx
             y = boxY + actionsBoxHeight + spacing;
 
             // ── Strength Limits ─────────────────────────────────────────────
-            const float strengthBoxHeight = 146f;
+            const float strengthBoxHeight = 110f;
             boxY = y;
             GUI.Box(new Rect(0f, boxY, innerWidth, strengthBoxHeight), "");
             GUI.Label(new Rect(spacing, boxY + 8f, innerWidth - spacing * 2f, row), Section(_owner.T("Strength Limits", "强度上限")));
@@ -191,12 +191,6 @@ namespace DGLab.BepInEx
             _owner.StrengthBValue = DrawSlider(_owner.T("Max B", "B上限"), _owner.StrengthBValue, 0, 200, spacing, y, labelWidth, innerWidth,
                 _owner.T("Maximum runtime strength for channel B (0-200). Events scale up to this value.", "B 通道运行时强度上限 (0-200)，事件按比例缩放到此值。"));
             y += 36f;
-            if (TooltipButton(new Rect(spacing, y, 80f, row), _owner.T("Set A", "应用A"),
-                _owner.T("Send the current Max A value to the device immediately.", "立即将当前 A 上限值发送到设备。")))
-                _owner.ApplyStrengthAFromMenu();
-            if (TooltipButton(new Rect(spacing + 88f, y, 80f, row), _owner.T("Set B", "应用B"),
-                _owner.T("Send the current Max B value to the device immediately.", "立即将当前 B 上限值发送到设备。")))
-                _owner.ApplyStrengthBFromMenu();
             y = boxY + strengthBoxHeight + spacing;
 
             // ── Channel Bindings ─────────────────────────────────────────────

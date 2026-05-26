@@ -378,8 +378,7 @@ namespace DGLab.BepInEx
                 _xuaWindow.OnGUI();
             }
 
-            InitializeWaveMonitorWindow();
-            if (WaveMonitorEnabledValue) _waveMonitorWindow?.OnGUI();
+            if (_waveMonitorWindow != null && _waveMonitorWindow.IsShown) _waveMonitorWindow.OnGUI();
         }
 
         internal void LogMenuDebug(string message)
@@ -971,13 +970,26 @@ namespace DGLab.BepInEx
                 case "pain1": return T("Discomfort", "不适");
                 case "pain2": return T("Pain", "疼痛");
                 case "pain3": return T("Severe pain", "剧烈疼痛");
+                case "pain4": return T("Agonizing pain", "剧痛难忍");
                 case "injury": return T("Injury", "损伤");
                 case "fracture": return T("Fracture", "骨折");
                 case "dislocation": return T("Dislocation", "脱臼");
                 case "bleeding": return T("Bleeding", "出血");
+                case "bleeding1": return T("Minor bleeding", "轻微出血");
+                case "bleeding2": return T("Moderate bleeding", "中度出血");
+                case "bleeding3": return T("Severe bleeding", "严重出血");
+                case "bleeding4": return T("Catastrophic bleeding", "灾难性出血");
                 case "blood-loss": return T("Hypovolemic", "低血容量");
                 case "hypotension": return T("Hypotension", "低血压");
                 case "hypertension": return T("Hypertension", "高血压");
+                case "hypotension1": return T("Mild hypotension", "轻度低血压");
+                case "hypotension2": return T("Moderate hypotension", "中度低血压");
+                case "hypotension3": return T("Severe hypotension", "严重低血压");
+                case "hypotension4": return T("Fatal hypotension", "致命低血压");
+                case "hypertension1": return T("Mild hypertension", "轻度高血压");
+                case "hypertension2": return T("Moderate hypertension", "中度高血压");
+                case "hypertension3": return T("Severe hypertension", "严重高血压");
+                case "hypertension4": return T("Fatal hypertension", "致命高血压");
                 case "internal-bleeding": return T("Internal bleeding", "内出血");
                 case "infection": return T("Infection", "感染");
                 case "sepsis": return T("Sepsis", "败血症");
@@ -1031,11 +1043,11 @@ namespace DGLab.BepInEx
 
         internal bool WaveMonitorEnabledValue
         {
-            get => _waveMonitorEnabled == null || _waveMonitorEnabled.Value;
+            get => _waveMonitorWindow != null && _waveMonitorWindow.IsShown;
             set
             {
-                if (_waveMonitorEnabled != null) _waveMonitorEnabled.Value = value;
-                if (!value && _waveMonitorWindow != null) _waveMonitorWindow.IsShown = false;
+                InitializeWaveMonitorWindow();
+                if (_waveMonitorWindow != null) _waveMonitorWindow.IsShown = value;
             }
         }
 
@@ -1065,6 +1077,7 @@ namespace DGLab.BepInEx
 
         internal void SetWaveMonitorOpen(bool isOpen)
         {
+            if (isOpen) InitializeWaveMonitorWindow();
             if (_waveMonitorWindow != null) _waveMonitorWindow.IsShown = isOpen;
         }
 
@@ -1323,7 +1336,7 @@ namespace DGLab.BepInEx
 
         private bool IsWaveMonitorTogglePressed()
         {
-            if (!_enableMenu.Value || !WaveMonitorEnabledValue || _waitingForMenuKeyBind || !string.IsNullOrEmpty(_waitingForUiKeyBind)) return false;
+            if (!_enableMenu.Value || _waitingForMenuKeyBind || !string.IsNullOrEmpty(_waitingForUiKeyBind)) return false;
             if (Time.realtimeSinceStartup - _lastWaveMonitorToggleTime < 0.25f) return false;
 
             var key = _waveMonitorToggleKey != null ? _waveMonitorToggleKey.Value : KeyCode.F9;

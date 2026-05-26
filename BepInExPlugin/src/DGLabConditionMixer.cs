@@ -284,28 +284,25 @@ namespace DGLab.BepInEx
 
             Add(PainConditionKey(painSeverity), painSeverity, SelectPainWave(painSeverity), 0.12f);
             Add("injury", Mathf.Max(maxLimbInjury / 100f, brokenOrDislocated), brokenOrDislocated > 0f ? DGLabWaveLibrary.FractureThrob : DGLabWaveLibrary.InjuryAche, 0.25f);
-            Add("bleeding", bleedingSeverity, DGLabWaveLibrary.BleedingDrain, 0.12f);
-            Add("blood-loss", bloodVolumeSeverity, DGLabWaveLibrary.BleedingDrain, 0.12f);
-            Add("hypotension", hypotensionSeverity, DGLabWaveLibrary.OxygenStutter, 0.12f);
-            Add("hypertension", hypertensionSeverity, DGLabWaveLibrary.ShockSpike, 0.12f);
-            Add("internal-bleeding", internalBleedingSeverity, DGLabWaveLibrary.BleedingDrain, 0.12f);
-            Add("infection", maxLimbInfection / 90f, DGLabWaveLibrary.InfectionCrawl, 0.14f);
-            Add("sepsis", septicSeverity, DGLabWaveLibrary.InfectionCrawl, 0.14f);
-            Add("sickness", sicknessSeverity, DGLabWaveLibrary.SicknessRoll, 0.16f);
-            Add("radiation", radiationSeverity, DGLabWaveLibrary.SicknessRoll, 0.12f);
-            Add("oxygen", oxygenSeverity, DGLabWaveLibrary.OxygenStutter, 0.12f);
-            Add("arrhythmia", arrhythmiaSeverity, DGLabWaveLibrary.Heartbeat, 0.12f);
-            Add("cardiac-arrest", cardiacArrestSeverity, DGLabWaveLibrary.ShockSpike, 0.12f);
+            Add(BleedingConditionKey(bleedingSeverity), bleedingSeverity, SelectBleedingWave(bleedingSeverity), 0.12f);
+            Add("blood-loss", bloodVolumeSeverity, DGLabWaveLibrary.BloodLossFade, 0.12f);
+            Add(HypotensionConditionKey(bloodPressure, body.inCardiacArrest), hypotensionSeverity, SelectHypotensionWave(hypotensionSeverity), 0.12f);
+            Add(HypertensionConditionKey(bloodPressure, body.inCardiacArrest), hypertensionSeverity, SelectHypertensionWave(hypertensionSeverity), 0.12f);
+            Add("internal-bleeding", internalBleedingSeverity, SelectBleedingWave(internalBleedingSeverity), 0.12f);
+            Add("infection", maxLimbInfection / 90f, SelectInfectionWave(maxLimbInfection / 90f), 0.14f);
+            Add(SepsisConditionKey(septicSeverity), septicSeverity, SelectSepsisWave(septicSeverity), 0.14f);
+            Add("sickness", sicknessSeverity, SelectSicknessWave(sicknessSeverity), 0.16f);
+            Add("radiation", radiationSeverity, DGLabWaveLibrary.RadiationSicknessRoll, 0.12f);
+            Add("oxygen", oxygenSeverity, SelectOxygenWave(oxygenSeverity), 0.12f);
+            Add("arrhythmia", arrhythmiaSeverity, SelectArrhythmiaWave(arrhythmiaSeverity), 0.12f);
+            Add("cardiac-arrest", cardiacArrestSeverity, DGLabWaveLibrary.CardiacArrestDrop, 0.12f);
             Add("hunger", hungerSeverity, DGLabWaveLibrary.HungerGnaw, 0.18f);
-            Add("thirst", thirstSeverity, DGLabWaveLibrary.ThirstNeedle, 0.18f);
-            Add("temperature", temperatureSeverity, DGLabWaveLibrary.TemperatureWave, 0.14f);
-            Add("exertion", exertionSeverity, DGLabWaveLibrary.FatiguePulse, 0.2f);
-            Add("tired", tiredSeverity, DGLabWaveLibrary.FatiguePulse, 0.2f);
-            Add("mood", moodSeverity, DGLabWaveLibrary.MoodSink, 0.1f);
-            Add("panic", panicSeverity, DGLabWaveLibrary.Heartbeat, 0.12f);
-            Add("low-immunity", immunitySeverity, DGLabWaveLibrary.SicknessRoll, 0.2f);
-            Add("nerve", nerveSeverity, DGLabWaveLibrary.ShockSpike, 0.1f);
-            Add("trauma", traumaSeverity, DGLabWaveLibrary.InjuryAche, 0.08f);
+            Add("temperature", temperatureSeverity, SelectTemperatureWave(temperature), 0.14f);
+            Add("exertion", exertionSeverity, SelectFatigueWave(exertionSeverity), 0.2f);
+            Add("tired", tiredSeverity, SelectFatigueWave(tiredSeverity), 0.2f);
+            Add("panic", panicSeverity, DGLabWaveLibrary.PanicHeartbeat, 0.12f);
+            Add(NerveConditionKey(consciousness, brainHealth, body.strokeAmount), nerveSeverity, SelectNerveWave(consciousness, brainHealth, body.strokeAmount, nerveSeverity), 0.1f);
+            Add("trauma", traumaSeverity, DGLabWaveLibrary.TraumaFlashback, 0.08f);
             Add("pain-shock", painShockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f);
             Add("shock", shockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f);
 
@@ -463,28 +460,41 @@ namespace DGLab.BepInEx
                 case "shock":
                 case "pain-shock":
                 case "trauma":
-                case "nerve":
+                case "confused1":
+                case "confused2":
+                case "confused3":
+                case "braindamage1":
+                case "braindamage2":
+                case "braindamage3":
+                case "braindamage4":
+                case "stroke":
                 case "oxygen":
                 case "arrhythmia":
                 case "cardiac-arrest":
                 case "blood-loss":
-                case "hypotension":
-                case "hypertension":
+                case "hypotension1":
+                case "hypotension2":
+                case "hypotension3":
+                case "hypotension4":
+                case "hypertension1":
+                case "hypertension2":
+                case "hypertension3":
+                case "hypertension4":
                 case "internal-bleeding":
-                case "sepsis":
+                case "sepsis1":
+                case "sepsis2":
+                case "sepsis3":
                 case "sickness":
                 case "radiation":
                 case "hunger":
-                case "thirst":
                 case "temperature":
                 case "exertion":
                 case "tired":
-                case "mood":
                 case "panic":
-                case "low-immunity":
                 case "pain1":
                 case "pain2":
                 case "pain3":
+                case "pain4":
                     return true;
                 default:
                     return false;
@@ -493,9 +503,134 @@ namespace DGLab.BepInEx
 
         private static string PainConditionKey(float severity)
         {
+            if (severity >= 0.9f) return "pain4";
             if (severity >= 0.62f) return "pain3";
             if (severity >= 0.32f) return "pain2";
             return "pain1";
+        }
+
+        private static string BleedingConditionKey(float severity)
+        {
+            if (severity >= 0.82f) return "bleeding4";
+            if (severity >= 0.55f) return "bleeding3";
+            if (severity >= 0.28f) return "bleeding2";
+            return "bleeding1";
+        }
+
+        private static string SepsisConditionKey(float severity)
+        {
+            if (severity >= 0.7f) return "sepsis3";
+            if (severity >= 0.35f) return "sepsis2";
+            return "sepsis1";
+        }
+
+        private static string NerveConditionKey(float consciousness, float brainHealth, float strokeAmount)
+        {
+            if (strokeAmount > 70f) return "stroke";
+            if (brainHealth < 30f) return "braindamage4";
+            if (brainHealth < 60f) return "braindamage3";
+            if (brainHealth < 80f) return "braindamage2";
+            if (brainHealth < 95f) return "braindamage1";
+            if (consciousness < 55f) return "confused3";
+            if (consciousness < 72f) return "confused2";
+            return "confused1";
+        }
+
+        private static string HypotensionConditionKey(float bloodPressure, bool cardiacArrest)
+        {
+            if (cardiacArrest || bloodPressure < 60f) return "hypotension4";
+            if (bloodPressure < 83f) return "hypotension3";
+            if (bloodPressure < 96f) return "hypotension2";
+            return "hypotension1";
+        }
+
+        private static string HypertensionConditionKey(float bloodPressure, bool cardiacArrest)
+        {
+            if (cardiacArrest) return "hypertension1";
+            if (bloodPressure > 180f) return "hypertension4";
+            if (bloodPressure > 162f) return "hypertension3";
+            if (bloodPressure > 145f) return "hypertension2";
+            return "hypertension1";
+        }
+
+        private static string[] SelectBleedingWave(float severity)
+        {
+            if (severity >= 0.82f) return DGLabWaveLibrary.CatastrophicBleedDrain;
+            if (severity >= 0.55f) return DGLabWaveLibrary.HeavyBleedDrain;
+            if (severity >= 0.28f) return DGLabWaveLibrary.ModerateBleedDrain;
+            return DGLabWaveLibrary.MinorBleedDrain;
+        }
+
+        private static string[] SelectHypotensionWave(float severity)
+        {
+            if (severity >= 0.9f) return DGLabWaveLibrary.FatalHypotensionFade;
+            if (severity >= 0.55f) return DGLabWaveLibrary.SevereHypotensionFade;
+            if (severity >= 0.28f) return DGLabWaveLibrary.ModerateHypotensionFade;
+            return DGLabWaveLibrary.HypotensionFade;
+        }
+
+        private static string[] SelectHypertensionWave(float severity)
+        {
+            if (severity >= 0.9f) return DGLabWaveLibrary.FatalHypertensionPressure;
+            if (severity >= 0.55f) return DGLabWaveLibrary.SevereHypertensionPressure;
+            if (severity >= 0.28f) return DGLabWaveLibrary.ModerateHypertensionPressure;
+            return DGLabWaveLibrary.HypertensionPressure;
+        }
+
+        private static string[] SelectInfectionWave(float severity)
+        {
+            if (severity >= 0.65f) return DGLabWaveLibrary.SevereInfectionCrawl;
+            if (severity >= 0.35f) return DGLabWaveLibrary.PainfulInfectionCrawl;
+            return DGLabWaveLibrary.MildInfectionCrawl;
+        }
+
+        private static string[] SelectSepsisWave(float severity)
+        {
+            if (severity >= 0.7f) return DGLabWaveLibrary.SepticShockWave;
+            if (severity >= 0.35f) return DGLabWaveLibrary.SepsisPulse;
+            return DGLabWaveLibrary.PainfulInfectionCrawl;
+        }
+
+        private static string[] SelectSicknessWave(float severity)
+        {
+            return severity >= 0.65f ? DGLabWaveLibrary.RadiationSicknessRoll : DGLabWaveLibrary.SicknessRoll;
+        }
+
+        private static string[] SelectOxygenWave(float severity)
+        {
+            if (severity >= 0.9f) return DGLabWaveLibrary.FatalHypoxiaGasp;
+            if (severity >= 0.65f) return DGLabWaveLibrary.SuffocationGasp;
+            if (severity >= 0.28f) return DGLabWaveLibrary.ModerateHypoxiaStutter;
+            return DGLabWaveLibrary.MildHypoxiaFlutter;
+        }
+
+        private static string[] SelectArrhythmiaWave(float severity)
+        {
+            if (severity >= 0.65f) return DGLabWaveLibrary.FibrillationChaos;
+            if (severity >= 0.32f) return DGLabWaveLibrary.TachyHeartbeat;
+            return DGLabWaveLibrary.Heartbeat;
+        }
+
+        private static string[] SelectTemperatureWave(float temperature)
+        {
+            if (temperature >= 40f) return DGLabWaveLibrary.SevereHeatWave;
+            if (temperature >= 37f) return DGLabWaveLibrary.HeatWave;
+            if (temperature <= 32f) return DGLabWaveLibrary.SevereColdShiver;
+            return DGLabWaveLibrary.ColdShiver;
+        }
+
+        private static string[] SelectFatigueWave(float severity)
+        {
+            return severity >= 0.55f ? DGLabWaveLibrary.SevereFatigueDrag : DGLabWaveLibrary.FatiguePulse;
+        }
+
+        private static string[] SelectNerveWave(float consciousness, float brainHealth, float strokeAmount, float severity)
+        {
+            if (strokeAmount > 70f) return DGLabWaveLibrary.FibrillationChaos;
+            if (brainHealth < 95f) return DGLabWaveLibrary.BrainInjuryJolt;
+            if (consciousness < 55f) return DGLabWaveLibrary.SevereHypotensionFade;
+            if (consciousness < 72f) return DGLabWaveLibrary.ConfusionDrift;
+            return DGLabWaveLibrary.DizzinessNerve;
         }
 
         private static bool ContainsLayer(List<ConditionLayer> layers, string key)
@@ -545,6 +680,7 @@ namespace DGLab.BepInEx
 
         private static string[] SelectPainWave(float severity)
         {
+            if (severity >= 0.9f) return DGLabWaveLibrary.AgonySurge;
             if (severity >= 0.62f) return DGLabWaveLibrary.SeverePainTremor;
             if (severity >= 0.32f) return DGLabWaveLibrary.PainTremor;
             return DGLabWaveLibrary.PainThrob;
