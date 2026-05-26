@@ -190,17 +190,14 @@ Network/EmbeddedServerAddress = 192.168.x.x
 <GameDir>\BepInEx\cache\DG-Lab\dglab-qr.png
 ```
 
-## 构建
+## 开发说明
 
-1. 安装可构建 `net48` 项目的 .NET SDK。
-2. 将 BepInEx、Unity、游戏和第三方引用 DLL 放入 `BepInExPlugin\lib`，或保持项目文件中的引用路径有效。
-3. 在项目根目录运行：
+源码构建与集成说明：
 
-```powershell
-dotnet build "BepInExPlugin\DGLab.BepInEx.csproj" -c Release
-```
-
-4. 将运行文件打包到 `DGLab-EXP-BodySync` 文件夹，并部署到 `<GameDir>\BepInEx\plugins\`。
+| 路径 | 用途 |
+| --- | --- |
+| [BepInExPlugin/README.zh-CN.md](./BepInExPlugin/README.zh-CN.md) | BepInEx 模组构建、运行文件和发布打包说明 |
+| [UnityPlugin/README.zh-CN.md](./UnityPlugin/README.zh-CN.md) | 独立 Unity Socket v2 封装示例说明 |
 
 ## 鸣谢
 

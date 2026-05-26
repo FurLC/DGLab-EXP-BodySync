@@ -190,17 +190,14 @@ Local QR image path:
 <GameDir>\BepInEx\cache\DG-Lab\dglab-qr.png
 ```
 
-## Build
+## Development
 
-1. Install a .NET SDK capable of building `net48` projects.
-2. Put BepInEx, Unity, game, and third-party reference DLLs under `BepInExPlugin\lib`, or keep the project reference paths valid.
-3. From the project root, run:
+Source build and integration notes:
 
-```powershell
-dotnet build "BepInExPlugin\DGLab.BepInEx.csproj" -c Release
-```
-
-4. Package runtime files into a `DGLab-EXP-BodySync` folder and deploy it to `<GameDir>\BepInEx\plugins\`.
+| Path | Purpose |
+| --- | --- |
+| [BepInExPlugin/README.md](./BepInExPlugin/README.md) | BepInEx mod build, runtime files, and release packaging |
+| [UnityPlugin/README.md](./UnityPlugin/README.md) | Standalone Unity Socket v2 wrapper sample |
 
 ## Credits
 
