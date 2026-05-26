@@ -43,8 +43,6 @@ The main runtime files produced by the build are:
 - `QRCoder.dll`
 - `websocket-sharp.dll`
 
-`Newtonsoft.Json.dll` is also required if it is not already available in the target runtime.
-
 ## Notes
 
 - This is the game-specific BepInEx implementation.

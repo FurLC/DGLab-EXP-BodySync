@@ -122,17 +122,27 @@ namespace DGLab.BepInEx
             if (_owner.ShowQrPanel)
             {
                 // ── QR Code ─────────────────────────────────────────────────
+                var backendConnected = _owner.IsBackendConnected;
                 var candidates = _owner.QrAddressCandidates;
-                var ipRowHeight = candidates.Count > 0 ? row + 6f : 0f;
-                var qrTex = _owner.GetQrTexture();
-                var qrHeight = qrTex != null ? 200f : 50f;
+                var showQrDetails = backendConnected && _owner.QrPanelExpanded;
+                var ipRowHeight = showQrDetails && candidates.Count > 0 ? row + 6f : 0f;
+                var qrTex = showQrDetails ? _owner.GetQrTexture() : null;
+                var qrHeight = !backendConnected ? 32f : (showQrDetails ? (qrTex != null ? 200f : 50f) : 26f);
                 GUI.Box(new Rect(0f, posY, contentWidth, 46f + qrHeight + ipRowHeight), "");
                 GUI.Label(new Rect(x, posY + 8f, w, row), Section(_owner.T("QR Code", "二维码")));
-                if (qrTex != null)
+                GUI.enabled = backendConnected;
+                if (GUI.Button(new Rect(x + w - 104f, posY + 7f, 104f, row), showQrDetails ? _owner.T("Collapse", "收起") : _owner.T("Show QR", "显示二维码")))
+                    _owner.ToggleQrPanelExpanded();
+                GUI.enabled = true;
+                if (!backendConnected)
+                    GUI.Label(new Rect(x, posY + 34f, w, row), _owner.T("Backend disconnected. Restart the backend to generate a new QR code.", "后端已断开。请重启后端以生成新的二维码。"));
+                else if (!showQrDetails)
+                    GUI.Label(new Rect(x, posY + 34f, w, row), _owner.T("QR code hidden.", "二维码已省略。"));
+                else if (qrTex != null)
                     GUI.DrawTexture(new Rect(x + (w - 192f) * 0.5f, posY + 34f, 192f, 192f), qrTex, ScaleMode.ScaleToFit);
                 else
-                    GUI.Label(new Rect(x, posY + 34f, w, row), _owner.T("Waiting for connection…", "等待连接…"));
-                if (candidates.Count > 0)
+                    GUI.Label(new Rect(x, posY + 34f, w, row), _owner.T("Waiting for QR data…", "等待二维码数据…"));
+                if (showQrDetails && candidates.Count > 0)
                 {
                     var ipY = posY + 34f + qrHeight + 4f;
                     var btnW = Mathf.Min(130f, (w - spacing * (candidates.Count - 1)) / candidates.Count);
@@ -159,9 +169,11 @@ namespace DGLab.BepInEx
             if (TooltipButton(new Rect(spacing, y, 140f, row), _owner.T("Restart Backend", "重启后端"),
                 _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。")))
                 _owner.ReconnectFromMenu();
+            GUI.enabled = _owner.IsBackendConnected;
             if (_owner.ShowQrPanel && TooltipButton(new Rect(spacing + 148f, y, 140f, row), _owner.T("Refresh QR", "刷新二维码"),
                     _owner.T("Regenerate the QR code image.", "重新生成二维码图片。")))
                     _owner.EnsureConnectedForQrFromMenu();
+            GUI.enabled = true;
             if (TooltipButton(new Rect(_owner.ShowQrPanel ? spacing + 296f : spacing + 148f, y, 110f, row), _owner.T("Disconnect", "断开"),
                 _owner.T("Disconnect the current device connection.", "断开当前设备连接。")))
                 _owner.DisconnectFromMenu();

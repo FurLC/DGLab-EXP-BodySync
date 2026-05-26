@@ -62,7 +62,6 @@ With this binding, head, upper torso, and arms mainly output to A; abdomen and l
 | `DGLab.Game.dll` | Game body-state adapter |
 | `QRCoder.dll` | QR generation |
 | `websocket-sharp.dll` | WebSocket transport |
-| `Newtonsoft.Json.dll` | JSON serialization, required if not already provided by the runtime |
 
 ## Quick Start
 

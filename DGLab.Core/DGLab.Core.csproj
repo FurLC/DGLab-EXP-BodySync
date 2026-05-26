@@ -11,7 +11,7 @@
   <ItemGroup>
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\BepInExPlugin\lib\Newtonsoft.Json.dll</HintPath>
-      <Private>true</Private>
+      <Private>false</Private>
     </Reference>
     <Reference Include="WebSocketSharp">
       <HintPath>..\BepInExPlugin\lib\websocket-sharp.dll</HintPath>

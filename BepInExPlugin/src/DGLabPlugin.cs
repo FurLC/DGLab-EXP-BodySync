@@ -15,7 +15,7 @@ namespace DGLab.BepInEx
     {
         public const string PluginGuid = "dglab.socket";
         public const string PluginName = "DG-Lab EXP BodySync";
-        public const string PluginVersion = "0.1.32";
+        public const string PluginVersion = "0.2.1";
 
         private ManualLogSource _log;
         private DGLabClient _client;
@@ -68,6 +68,7 @@ namespace DGLab.BepInEx
         private bool _waitingForMenuKeyBind;
         private string _waitingForUiKeyBind;
         private Harmony _harmony;
+        private bool _qrPanelExpanded = true;
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKeyCode);
@@ -527,6 +528,16 @@ namespace DGLab.BepInEx
 
         internal bool ShowQrPanel => IsEmbeddedBackendActive || IsOfficialSocketProfile;
 
+        internal bool IsBackendConnected => _client != null;
+
+        internal bool QrPanelExpanded => _qrPanelExpanded;
+
+        internal void ToggleQrPanelExpanded()
+        {
+            _qrPanelExpanded = !_qrPanelExpanded;
+            if (!_qrPanelExpanded) InvalidateQrTexture();
+        }
+
         internal void SwitchExternalBackendProfile(string profile)
         {
             if (_externalBackendProfile == null) return;
@@ -556,7 +567,6 @@ namespace DGLab.BepInEx
         {
             get
             {
-                if (IsEmbeddedBackendActive) return GetOrCreateEmbeddedTerminalId();
                 return _client != null && !string.IsNullOrEmpty(_client.ClientId) ? _client.ClientId : "<not bound>";
             }
         }
@@ -1074,6 +1084,7 @@ namespace DGLab.BepInEx
             }
 
             _lastReconnectTime = Time.realtimeSinceStartup;
+            _qrPanelExpanded = true;
             if (_autoSelectBackend.Value && !_runtimeEmbeddedBackend) _autoBackendForcedEmbedded = false;
             _qrService?.InvalidateAddressCache();
             InitializeClient();
@@ -1083,18 +1094,29 @@ namespace DGLab.BepInEx
         {
             if (HasQrClientId(_client != null ? _client.ClientId : null))
             {
+                InvalidateQrTexture();
                 EnsureQrImage(QrUrlText);
                 return;
             }
 
-            _log.LogInfo("DG-Lab QR requested. Connecting to Socket backend now; local QR image will be regenerated after the scan URL is available.");
-            ReconnectFromMenu();
+            if (_client == null)
+            {
+                _log.LogInfo("DG-Lab QR refresh ignored because the backend is disconnected. Use Restart Backend first.");
+                return;
+            }
+
+            _log.LogInfo("DG-Lab QR refresh requested, but the backend has not assigned a clientId yet.");
         }
 
         internal void DisconnectFromMenu()
         {
+            _pendingReconnectTime = -1f;
+            _externalProbeActive = false;
+            _externalProbeDeadline = -1f;
             DisconnectClientIntentional();
             _client = null;
+            _qrPanelExpanded = false;
+            InvalidateQrAfterDisconnect();
             _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
             _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
             _conditionMixer = CreateConditionMixer();
@@ -1179,6 +1201,11 @@ namespace DGLab.BepInEx
             _client.Disconnect();
         }
 
+        private void InvalidateQrAfterDisconnect()
+        {
+            InvalidateQrTexture();
+        }
+
         internal void OpenQrUrlFromMenu()
         {
             OpenQrImageFromMenu();
@@ -1188,8 +1215,9 @@ namespace DGLab.BepInEx
         {
             if (!HasQrClientId(_client != null ? _client.ClientId : null))
             {
-                _log.LogInfo("DG-Lab QR image requested before clientId is assigned. Connecting to Socket backend now.");
-                EnsureConnectedForQrFromMenu();
+                _log.LogInfo(_client == null
+                    ? "DG-Lab QR image requested while the backend is disconnected. Use Restart Backend first."
+                    : "DG-Lab QR image requested before clientId is assigned.");
                 return;
             }
 
@@ -1491,6 +1519,11 @@ namespace DGLab.BepInEx
         {
             if (!_refreshEmbeddedTerminalIdOnStart.Value && (!forceWhenEmpty || !string.IsNullOrWhiteSpace(_embeddedTerminalId.Value))) return;
 
+            ForceRefreshEmbeddedTerminalId();
+        }
+
+        private void ForceRefreshEmbeddedTerminalId()
+        {
             _embeddedTerminalId.Value = GenerateSecureSessionId();
             Config.Save();
             _log.LogInfo("DG-Lab generated embedded terminal ID for this backend session: " + _embeddedTerminalId.Value);

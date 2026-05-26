@@ -62,7 +62,6 @@ B 通道：DownTorso,LeftLeg,RightLeg
 | `DGLab.Game.dll` | 游戏身体状态适配 |
 | `QRCoder.dll` | 二维码生成 |
 | `websocket-sharp.dll` | WebSocket 通信 |
-| `Newtonsoft.Json.dll` | JSON 序列化，若运行环境未提供则需要携带 |
 
 ## 快速开始
 

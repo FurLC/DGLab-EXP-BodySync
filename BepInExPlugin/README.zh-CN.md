@@ -43,8 +43,6 @@ BepInExPlugin\bin\Release\net48\
 - `QRCoder.dll`
 - `websocket-sharp.dll`
 
-如果目标运行环境没有提供 `Newtonsoft.Json.dll`，也需要一并提供。
-
 ## 说明
 
 - 这里是游戏专用的 BepInEx 实现。
