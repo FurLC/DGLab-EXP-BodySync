@@ -8,10 +8,26 @@ namespace DGLab.BepInEx
 
         public int StrengthA { get; private set; }
         public int StrengthB { get; private set; }
+        public int DeviceStrengthA { get; private set; }
+        public int DeviceStrengthB { get; private set; }
+        public int DeviceLimitA { get; private set; } = 200;
+        public int DeviceLimitB { get; private set; } = 200;
+        public bool HasDeviceStrengthState { get; private set; }
         public int RuntimeStrengthA => StrengthA;
         public int RuntimeStrengthB => StrengthB;
         public string LastEvent { get; private set; } = "idle";
         public string LastWave { get; private set; } = "none";
+        public string LastWaveSource { get; private set; } = "none";
+        public int LastWaveDurationSeconds { get; private set; }
+        public string[] LastWaveFrames { get; private set; }
+        public string LastWaveA { get; private set; } = "none";
+        public string LastWaveSourceA { get; private set; } = "none";
+        public int LastWaveDurationSecondsA { get; private set; }
+        public string[] LastWaveFramesA { get; private set; }
+        public string LastWaveB { get; private set; } = "none";
+        public string LastWaveSourceB { get; private set; } = "none";
+        public int LastWaveDurationSecondsB { get; private set; }
+        public string[] LastWaveFramesB { get; private set; }
         public string ActiveConditions { get; private set; } = "none";
         public string OutputConditionsA { get; private set; } = "none";
         public string OutputConditionsB { get; private set; } = "none";
@@ -36,11 +52,52 @@ namespace DGLab.BepInEx
             LastUpdateTime = UnityEngine.Time.time;
         }
 
+        public void SetDeviceStrengthState(int strengthA, int strengthB, int limitA, int limitB)
+        {
+            DeviceStrengthA = Math.Min(200, Math.Max(0, strengthA));
+            DeviceStrengthB = Math.Min(200, Math.Max(0, strengthB));
+            DeviceLimitA = Math.Min(200, Math.Max(0, limitA));
+            DeviceLimitB = Math.Min(200, Math.Max(0, limitB));
+            HasDeviceStrengthState = true;
+            LastUpdateTime = UnityEngine.Time.time;
+        }
+
         public void SetWave(string eventKey, string profile)
         {
             LastEvent = string.IsNullOrEmpty(eventKey) ? "wave" : eventKey;
             LastWave = string.IsNullOrEmpty(profile) ? "default" : profile;
             LastUpdateTime = UnityEngine.Time.time;
+        }
+
+        public void SetWave(string eventKey, string profile, string[] frames, int durationSeconds)
+        {
+            SetWave(eventKey, profile);
+            LastWaveSource = LastEvent;
+            LastWaveDurationSeconds = Math.Max(0, durationSeconds);
+            LastWaveFrames = frames != null ? (string[])frames.Clone() : null;
+        }
+
+        public void SetWave(int channel, string eventKey, string profile, string[] frames, int durationSeconds)
+        {
+            SetWave(eventKey, profile, frames, durationSeconds);
+            var source = LastWaveSource;
+            var wave = LastWave;
+            var duration = LastWaveDurationSeconds;
+            var copy = frames != null ? (string[])frames.Clone() : null;
+            if (channel == 2)
+            {
+                LastWaveSourceB = source;
+                LastWaveB = wave;
+                LastWaveDurationSecondsB = duration;
+                LastWaveFramesB = copy;
+            }
+            else
+            {
+                LastWaveSourceA = source;
+                LastWaveA = wave;
+                LastWaveDurationSecondsA = duration;
+                LastWaveFramesA = copy;
+            }
         }
 
         public void SetOutputConditions(string conditionsA, string conditionsB)
@@ -76,8 +133,22 @@ namespace DGLab.BepInEx
             var isInactive = IsInactiveReason(reason);
             StrengthA = 0;
             StrengthB = 0;
+            DeviceStrengthA = 0;
+            DeviceStrengthB = 0;
+            HasDeviceStrengthState = false;
             LastEvent = isInactive || IsClearReason(reason) || string.IsNullOrEmpty(reason) ? "none" : reason;
             LastWave = "none";
+            LastWaveSource = "none";
+            LastWaveDurationSeconds = 0;
+            LastWaveFrames = null;
+            LastWaveA = "none";
+            LastWaveSourceA = "none";
+            LastWaveDurationSecondsA = 0;
+            LastWaveFramesA = null;
+            LastWaveB = "none";
+            LastWaveSourceB = "none";
+            LastWaveDurationSecondsB = 0;
+            LastWaveFramesB = null;
             ActiveConditions = isInactive || IsClearReason(reason) || string.IsNullOrEmpty(reason) ? "none" : reason;
             OutputConditionsA = "none";
             OutputConditionsB = "none";
@@ -103,6 +174,7 @@ namespace DGLab.BepInEx
         {
             return string.Equals(reason, "no-body", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(reason, "no-limbs", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(reason, "dead", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(reason, "no-world", StringComparison.OrdinalIgnoreCase);
         }
 

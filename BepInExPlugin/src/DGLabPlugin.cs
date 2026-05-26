@@ -23,8 +23,14 @@ namespace DGLab.BepInEx
 
         private bool _menuOpen;
         private bool _nativeF10WasDown;
+        private bool _nativeF9WasDown;
+        private bool _nativeMiniOverlayKeyWasDown;
+        private bool _nativeWaveMonitorKeyWasDown;
         private bool _nativeConfiguredKeyWasDown;
+        private int _lastUiToggleFrame = -1;
         private float _lastMenuToggleTime = -10f;
+        private float _lastWaveMonitorToggleTime = -10f;
+        private float _lastMiniOverlayToggleTime = -10f;
         private float _lastReconnectTime = -10f;
         private float _pendingReconnectTime = -1f;
         private bool _intentionalDisconnect;
@@ -40,6 +46,7 @@ namespace DGLab.BepInEx
         private int _runnerCreateAttempts;
         private DGLabXuaWindow _xuaWindow;
         private DGLabMiniOverlayWindow _miniOverlayWindow;
+        private DGLabWaveMonitorWindow _waveMonitorWindow;
         private GameObject _standaloneImGuiRunnerObject;
         private bool _bootstrapperCreated;
         private DGLabOutputState _outputState;
@@ -57,9 +64,9 @@ namespace DGLab.BepInEx
         private bool _bodyObservationBaselineReady;
         private bool _outputClearedForNoBody = true;
         private string _lastInactiveReason = string.Empty;
-        private bool _wasDead;
         private bool _wasCritical;
         private bool _waitingForMenuKeyBind;
+        private string _waitingForUiKeyBind;
         private Harmony _harmony;
 
         [DllImport("user32.dll")]
@@ -99,12 +106,13 @@ namespace DGLab.BepInEx
             _qrService = new DGLabQrService(
                 _log,
                 () => IsEmbeddedBackendActive,
-                () => _embeddedTerminalId.Value,
+                GetOrCreateEmbeddedTerminalId,
                 () => _embeddedServerAddress.Value,
                 () => _embeddedServerPort.Value,
                 () => ResolveExternalBackendUrl(),
                 () => _qrWebSocketUrl.Value,
                 () => Path.Combine(Paths.BepInExRootPath, "cache", "DG-Lab"));
+            GetOrCreateEmbeddedTerminalId();
             InitializeClient();
             CreateImGuiBootstrapper();
             EnsureStandaloneImGuiRunner();
@@ -124,7 +132,9 @@ namespace DGLab.BepInEx
                     _selfHarmIntensity,
                     _enableWaveEvents.Value ? _waveRouter : null,
                     _outputState,
-                    _strengthEnvelope);
+                    _strengthEnvelope,
+                    () => _channelABodyParts.Value,
+                    () => _channelBBodyParts.Value);
                 _harmony.PatchAll();
                 _log.LogInfo("DG-Lab damage hook enabled.");
             }
@@ -155,7 +165,17 @@ namespace DGLab.BepInEx
                 }
                 else
                 {
-                    _client = new DGLabClient(ResolveExternalBackendUrl());
+                    var externalUrl = ResolveExternalBackendUrl();
+                    if (string.IsNullOrWhiteSpace(externalUrl))
+                    {
+                        _runtimeEmbeddedBackend = true;
+                        RefreshEmbeddedTerminalIdIfNeeded(true);
+                        _client = new DGLabClient("0.0.0.0", _embeddedServerPort.Value, _embeddedTerminalId.Value);
+                    }
+                    else
+                    {
+                        _client = new DGLabClient(externalUrl);
+                    }
                 }
 
                 _client.OnConnected += () =>
@@ -169,10 +189,10 @@ namespace DGLab.BepInEx
                 _client.Connect();
                 _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded WebSocket backend initialized: 0.0.0.0:" + _embeddedServerPort.Value : "DG-Lab external WebSocket client initialized: " + ResolveExternalBackendUrl());
 
-                _persistent = new DGLabPersistentOutput(_client, SelectWaveForTime, _outputState);
+                _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
                 _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
                 _conditionMixer = CreateConditionMixer();
-                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, SelectWaveForTime, _outputState);
+                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
                 RegisterDefaultWaves();
                 DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
             }
@@ -181,10 +201,10 @@ namespace DGLab.BepInEx
                 _log.LogError("DG-Lab WebSocket initialization failed. Menu will remain available.");
                 _log.LogError(ex);
                 _client = null;
-                _persistent = new DGLabPersistentOutput(_client, SelectWaveForTime, _outputState);
+                _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
                 _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
                 _conditionMixer = CreateConditionMixer();
-                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, SelectWaveForTime, _outputState);
+                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
                 RegisterDefaultWaves();
                 DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
             }
@@ -199,6 +219,7 @@ namespace DGLab.BepInEx
                 _strengthEnvelope,
                 () => _channelABodyParts.Value,
                 () => _channelBBodyParts.Value,
+                IsOutputChannelEnabled,
                 () => _realtimeTestLog.Value,
                 () => _realtimeTestLogInterval.Value);
         }
@@ -233,17 +254,25 @@ namespace DGLab.BepInEx
             if (Input.GetKeyDown(KeyCode.X) && _client != null && _client.HasTarget) _client.ClearWaveB();
             if (Input.GetKeyDown(KeyCode.Space))
             {
-                var testWave = SelectWaveForTime("hotkey", new[]
+                var testWave = new[]
                 {
                     "0A0A0A0A64646464",
                     "1414141464646464",
                     "1E1E1E1E64646464",
                     "2828282864646464"
-                });
-                _outputState?.SetWave("hotkey", "test");
+                };
                 if (_client != null && _client.HasTarget)
                 {
-                    _client.SendWaveA(testWave, 5);
+                    if (IsOutputChannelEnabled(1))
+                    {
+                        _outputState?.SetWave(1, "hotkey", "test", testWave, 5);
+                        _client.SendWaveA(testWave, 5);
+                    }
+                    if (IsOutputChannelEnabled(2))
+                    {
+                        _outputState?.SetWave(2, "hotkey", "test", testWave, 5);
+                        _client.SendWaveB(testWave, 5);
+                    }
                 }
             }
         }
@@ -261,12 +290,35 @@ namespace DGLab.BepInEx
 
             TickRealtimeOutput(source);
 
+            if (CapturePendingUiKeyBinding()) return;
+
             if (IsMenuTogglePressed())
             {
                 _menuOpen = !_menuOpen;
                 if (_xuaWindow != null) _xuaWindow.IsShown = _menuOpen;
                 LogMenuDebug("DG-Lab menu toggled from " + source + ": " + (_menuOpen ? "open" : "closed"));
                 RefreshOverlayMenu();
+                _lastUiToggleFrame = Time.frameCount;
+                return;
+            }
+
+            if (_lastUiToggleFrame != Time.frameCount && IsWaveMonitorTogglePressed())
+            {
+                InitializeWaveMonitorWindow();
+                if (_waveMonitorWindow != null)
+                {
+                    _waveMonitorWindow.IsShown = !_waveMonitorWindow.IsShown;
+                    LogMenuDebug("DG-Lab wave monitor toggled from " + source + ": " + (_waveMonitorWindow.IsShown ? "open" : "closed"));
+                }
+                _lastUiToggleFrame = Time.frameCount;
+                return;
+            }
+
+            if (_lastUiToggleFrame != Time.frameCount && IsMiniOverlayTogglePressed())
+            {
+                _miniOverlayEnabled.Value = !_miniOverlayEnabled.Value;
+                LogMenuDebug("DG-Lab status overlay toggled from " + source + ": " + (_miniOverlayEnabled.Value ? "open" : "closed"));
+                _lastUiToggleFrame = Time.frameCount;
             }
         }
 
@@ -285,32 +337,31 @@ namespace DGLab.BepInEx
             _strengthEnvelope?.Tick();
             _persistent?.Tick();
 
-            if (_enableWaveEvents == null || !_enableWaveEvents.Value) return;
-
-            var isDead = !body.alive;
             var isCritical = body.isCriticallyDying;
+            var isDead = !body.alive;
 
             ObserveBodyState(body);
 
-            if (_enableConditionMixer != null && _enableConditionMixer.Value && !isDead)
+            if (_enableWaveEvents == null || !_enableWaveEvents.Value) return;
+
+            if (_enableConditionMixer != null && _enableConditionMixer.Value)
             {
                 _conditionMixer?.Tick(body);
             }
 
             if (_enableDeathState.Value)
             {
-                if (isDead && !_wasDead) _waveRouter.StartPersistent("death", DGLabWaveLibrary.DeathLoop, _deathWaveDuration.Value);
-                else if (!isDead && _wasDead) _waveRouter.StopPersistent("death");
+                if (isDead) _waveRouter.StartPersistent("death", DGLabWaveLibrary.DeathLoop, _deathWaveDuration.Value);
+                else _waveRouter.StopPersistent("death");
             }
 
             if (_enableCriticalState.Value)
             {
-                if (isCritical && !_wasCritical) _waveRouter.StartPersistent("critical", DGLabWaveLibrary.CriticalLoop, _criticalWaveDuration.Value);
+                if (isCritical && !isDead && !_wasCritical) _waveRouter.StartPersistent("critical", DGLabWaveLibrary.CriticalLoop, _criticalWaveDuration.Value);
                 else if (!isCritical && _wasCritical) _waveRouter.StopPersistent("critical");
             }
 
-            _wasDead = isDead;
-            _wasCritical = isCritical;
+            _wasCritical = isCritical && !isDead;
         }
 
         internal void HostedMenuOnGUI(string source)
@@ -325,6 +376,9 @@ namespace DGLab.BepInEx
             {
                 _xuaWindow.OnGUI();
             }
+
+            InitializeWaveMonitorWindow();
+            if (WaveMonitorEnabledValue) _waveMonitorWindow?.OnGUI();
         }
 
         internal void LogMenuDebug(string message)
@@ -346,6 +400,14 @@ namespace DGLab.BepInEx
 
             _miniOverlayWindow = new DGLabMiniOverlayWindow(this);
             LogMenuDebug("DG-Lab mini overlay initialized.");
+        }
+
+        private void InitializeWaveMonitorWindow()
+        {
+            if (_waveMonitorWindow != null) return;
+
+            _waveMonitorWindow = new DGLabWaveMonitorWindow(this);
+            LogMenuDebug("DG-Lab wave monitor initialized.");
         }
 
         internal void EnsureStandaloneImGuiRunnerFromBootstrapper()
@@ -444,14 +506,44 @@ namespace DGLab.BepInEx
         internal string ExternalBackendProfileText => _externalBackendProfile != null ? _externalBackendProfile.Value : "<not loaded>";
         internal string ExternalBackendUrlText => ResolveExternalBackendUrl();
 
+        internal string ThirdPartyControllerUrlValue
+        {
+            get => _thirdPartyControllerUrl != null ? _thirdPartyControllerUrl.Value : string.Empty;
+            set
+            {
+                if (_thirdPartyControllerUrl == null) return;
+                var next = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+                if (string.Equals(_thirdPartyControllerUrl.Value, next, StringComparison.Ordinal)) return;
+                _thirdPartyControllerUrl.Value = next;
+                _advancedConfig?.Save();
+            }
+        }
+
         internal bool IsOfficialSocketProfile => _externalBackendProfile != null &&
             string.Equals(_externalBackendProfile.Value, "OfficialSocket", StringComparison.OrdinalIgnoreCase);
+
+        internal bool IsThirdPartyControllerProfile => _externalBackendProfile != null &&
+            string.Equals(_externalBackendProfile.Value, "ThirdPartyController", StringComparison.OrdinalIgnoreCase);
+
+        internal bool ShowQrPanel => IsEmbeddedBackendActive || IsOfficialSocketProfile;
 
         internal void SwitchExternalBackendProfile(string profile)
         {
             if (_externalBackendProfile == null) return;
+            if (string.Equals(_externalBackendProfile.Value, profile, StringComparison.OrdinalIgnoreCase)) return;
             _externalBackendProfile.Value = profile;
             _advancedConfig.Save();
+
+            // Only force-reconnect to external if the new profile has a valid URL
+            var url = ResolveExternalBackendUrl();
+            if (!string.IsNullOrWhiteSpace(url) && !url.Equals(_serverUrl?.Value, StringComparison.OrdinalIgnoreCase))
+            {
+                _autoBackendForcedEmbedded = false;
+                _runtimeEmbeddedBackend = false;
+                _lastReconnectTime = -1f;
+                _qrService?.InvalidateAddressCache();
+                InitializeClient();
+            }
         }
 
         internal bool MenuToggleAltRequired
@@ -460,25 +552,75 @@ namespace DGLab.BepInEx
             set { if (_menuToggleAltRequired != null) _menuToggleAltRequired.Value = value; }
         }
 
-        internal string ClientIdText => _client != null && !string.IsNullOrEmpty(_client.ClientId) ? _client.ClientId : "<not bound>";
+        internal string ClientIdText
+        {
+            get
+            {
+                if (IsEmbeddedBackendActive) return GetOrCreateEmbeddedTerminalId();
+                return _client != null && !string.IsNullOrEmpty(_client.ClientId) ? _client.ClientId : "<not bound>";
+            }
+        }
 
         internal string TargetIdText => _client != null && !string.IsNullOrEmpty(_client.TargetId) ? _client.TargetId : "<not bound>";
 
         internal string MenuToggleKeyName => _menuToggleKey != null ? _menuToggleKey.Value.ToString() : "F10";
 
+        internal string MiniOverlayToggleKeyName => _miniOverlayToggleKey != null ? _miniOverlayToggleKey.Value.ToString() : "F8";
+
+        internal string WaveMonitorToggleKeyName => _waveMonitorToggleKey != null ? _waveMonitorToggleKey.Value.ToString() : "F9";
+
+        internal string MiniOverlayToggleKeyDisplay => (_miniOverlayToggleAltRequired != null && _miniOverlayToggleAltRequired.Value ? "Alt+" : "") + MiniOverlayToggleKeyName;
+
+        internal string WaveMonitorToggleKeyDisplay => (_waveMonitorToggleAltRequired != null && _waveMonitorToggleAltRequired.Value ? "Alt+" : "") + WaveMonitorToggleKeyName;
+
         internal bool WaitingForMenuKeyBind => _waitingForMenuKeyBind;
+
+        internal bool WaitingForStatusOverlayKeyBind => string.Equals(_waitingForUiKeyBind, "status", StringComparison.OrdinalIgnoreCase);
+
+        internal bool WaitingForWaveMonitorKeyBind => string.Equals(_waitingForUiKeyBind, "wave", StringComparison.OrdinalIgnoreCase);
 
         internal void BeginMenuKeyBind()
         {
             _waitingForMenuKeyBind = true;
+            _waitingForUiKeyBind = null;
+        }
+
+        internal void BeginStatusOverlayKeyBind()
+        {
+            _waitingForUiKeyBind = "status";
+            _waitingForMenuKeyBind = false;
+        }
+
+        internal void BeginWaveMonitorKeyBind()
+        {
+            _waitingForUiKeyBind = "wave";
+            _waitingForMenuKeyBind = false;
         }
 
         internal void ResetMenuKeyBind()
         {
             _waitingForMenuKeyBind = false;
+            if (string.Equals(_waitingForUiKeyBind, "menu", StringComparison.OrdinalIgnoreCase)) _waitingForUiKeyBind = null;
             _menuToggleKey.Value = KeyCode.F10;
             _nativeConfiguredKeyWasDown = false;
             _nativeF10WasDown = false;
+        }
+
+        internal void ResetStatusOverlayKeyBind()
+        {
+            if (string.Equals(_waitingForUiKeyBind, "status", StringComparison.OrdinalIgnoreCase)) _waitingForUiKeyBind = null;
+            _miniOverlayToggleKey.Value = KeyCode.RightBracket;
+            if (_miniOverlayToggleAltRequired != null) _miniOverlayToggleAltRequired.Value = true;
+            _nativeMiniOverlayKeyWasDown = false;
+        }
+
+        internal void ResetWaveMonitorKeyBind()
+        {
+            if (string.Equals(_waitingForUiKeyBind, "wave", StringComparison.OrdinalIgnoreCase)) _waitingForUiKeyBind = null;
+            _waveMonitorToggleKey.Value = KeyCode.LeftBracket;
+            if (_waveMonitorToggleAltRequired != null) _waveMonitorToggleAltRequired.Value = true;
+            _nativeWaveMonitorKeyWasDown = false;
+            _nativeF9WasDown = false;
         }
 
         internal string QrUrlText
@@ -508,6 +650,48 @@ namespace DGLab.BepInEx
                 var clientId = _client != null ? _client.ClientId : null;
                 return HasQrClientId(clientId) ? EnsureQrImage(_qrService.BuildQrUrl(clientId)) : "<not available until clientId is assigned>";
             }
+        }
+
+        private Texture2D _qrTexture;
+        private string _qrTextureUrl;
+
+        internal void InvalidateQrTexture()
+        {
+            if (_qrTexture != null) { UnityEngine.Object.Destroy(_qrTexture); _qrTexture = null; }
+            _qrTextureUrl = null;
+        }
+
+        internal System.Collections.Generic.List<string> QrAddressCandidates =>
+            _qrService != null ? _qrService.GetAdvertiseAddressList() : new System.Collections.Generic.List<string>();
+
+        internal void SelectQrAddress(string address)
+        {
+            _qrService?.SetAdvertiseAddressOverride(address);
+            InvalidateQrTexture();
+        }
+
+        internal Texture2D GetQrTexture()
+        {
+            var url = QrUrlText;
+            if (url.StartsWith("<"))
+            {
+                InvalidateQrTexture();
+                return null;
+            }
+            if (url == _qrTextureUrl && _qrTexture != null) return _qrTexture;
+            var path = EnsureQrImage(url);
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return null;
+            try
+            {
+                var bytes = System.IO.File.ReadAllBytes(path);
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!tex.LoadImage(bytes)) return null;
+                if (_qrTexture != null) UnityEngine.Object.Destroy(_qrTexture);
+                _qrTexture = tex;
+                _qrTextureUrl = url;
+                return _qrTexture;
+            }
+            catch { return null; }
         }
 
         internal bool EnabledValue
@@ -551,7 +735,8 @@ namespace DGLab.BepInEx
 
         private bool ShouldStartEmbeddedBackend()
         {
-            return _autoBackendForcedEmbedded || (!_autoSelectBackend.Value && _useEmbeddedServer.Value);
+            if (_autoBackendForcedEmbedded || (!_autoSelectBackend.Value && _useEmbeddedServer.Value)) return true;
+            return _autoSelectBackend.Value && string.IsNullOrWhiteSpace(ResolveExternalBackendUrl());
         }
 
         internal string BackendModeText
@@ -563,7 +748,7 @@ namespace DGLab.BepInEx
             }
         }
 
-        internal string WaveProfileText => GetCurrentWaveProfileName();
+        internal string WaveProfileText => T("Default", "默认");
 
         internal string RuntimeStrengthAText => _outputState != null ? _outputState.RuntimeStrengthA.ToString() : "0";
 
@@ -573,21 +758,84 @@ namespace DGLab.BepInEx
 
         internal string MaxStrengthBText => _strengthB != null ? _strengthB.Value.ToString() : "0";
 
+        internal string EffectiveLimitAText => FormatEffectiveLimitText(1);
+
+        internal string EffectiveLimitBText => FormatEffectiveLimitText(2);
+
+        private string FormatEffectiveLimitText(int channel)
+        {
+            var configured = Mathf.Clamp(channel == 2 ? (_strengthB != null ? _strengthB.Value : 0) : (_strengthA != null ? _strengthA.Value : 0), 0, 200);
+            if (_outputState == null || !_outputState.HasDeviceStrengthState) return configured.ToString();
+
+            var device = Mathf.Clamp(channel == 2 ? _outputState.DeviceLimitB : _outputState.DeviceLimitA, 0, 200);
+            var effective = Mathf.Min(configured, device);
+            return device < configured ? effective + " (phone)" : effective.ToString();
+        }
+
+        internal bool IsOutputChannelEnabled(int channel)
+        {
+            var configured = Mathf.Clamp(channel == 2 ? (_strengthB != null ? _strengthB.Value : 0) : (_strengthA != null ? _strengthA.Value : 0), 0, 200);
+            if (configured <= 0) return false;
+
+            if (_outputState == null || !_outputState.HasDeviceStrengthState) return true;
+
+            var deviceLimit = Mathf.Clamp(channel == 2 ? _outputState.DeviceLimitB : _outputState.DeviceLimitA, 0, 200);
+            return deviceLimit > 0;
+        }
+
         internal string ChannelABodyPartsValue
         {
             get => _channelABodyParts.Value;
-            set => _channelABodyParts.Value = string.IsNullOrWhiteSpace(value) ? "Head,UpTorso,DownTorso,ArmF,ArmB" : value.Trim();
+            set => _channelABodyParts.Value = value == null ? string.Empty : value.Trim();
+        }
+
+        internal bool IsChannelABodyPartSelected(string token) => DGLabBodyBinding.BindingContainsToken(ChannelABodyPartsValue, token);
+
+        internal void ToggleChannelABodyPart(string token)
+        {
+            ChannelABodyPartsValue = DGLabBodyBinding.ToggleBindingToken(ChannelABodyPartsValue, token);
         }
 
         internal string ChannelBBodyPartsValue
         {
             get => _channelBBodyParts.Value;
-            set => _channelBBodyParts.Value = string.IsNullOrWhiteSpace(value) ? "LegF,LegB" : value.Trim();
+            set => _channelBBodyParts.Value = value == null ? string.Empty : value.Trim();
+        }
+
+        internal bool IsChannelBBodyPartSelected(string token) => DGLabBodyBinding.BindingContainsToken(ChannelBBodyPartsValue, token);
+
+        internal void ToggleChannelBBodyPart(string token)
+        {
+            ChannelBBodyPartsValue = DGLabBodyBinding.ToggleBindingToken(ChannelBBodyPartsValue, token);
         }
 
         internal string LastOutputEventText => FormatLastOutputText();
 
         internal string LastWaveText => FormatWaveText(_outputState != null ? _outputState.LastWave : "none");
+
+        internal string LastWaveSourceText => FormatDisplayKey(_outputState != null ? _outputState.LastWaveSource : "none", DisplayKeyKind.Event);
+
+        internal string LastWaveProfileText => FormatWaveText(_outputState != null ? _outputState.LastWave : "none");
+
+        internal string[] LastWaveFrames => _outputState != null && _outputState.LastWaveFrames != null ? (string[])_outputState.LastWaveFrames.Clone() : null;
+
+        internal int LastWaveDurationSeconds => _outputState != null ? _outputState.LastWaveDurationSeconds : 0;
+
+        internal string LastWaveSourceTextA => FormatDisplayKey(_outputState != null ? _outputState.LastWaveSourceA : "none", DisplayKeyKind.Event);
+
+        internal string LastWaveProfileTextA => FormatWaveText(_outputState != null ? _outputState.LastWaveA : "none");
+
+        internal string[] LastWaveFramesA => _outputState != null && _outputState.LastWaveFramesA != null ? (string[])_outputState.LastWaveFramesA.Clone() : null;
+
+        internal int LastWaveDurationSecondsA => _outputState != null ? _outputState.LastWaveDurationSecondsA : 0;
+
+        internal string LastWaveSourceTextB => FormatDisplayKey(_outputState != null ? _outputState.LastWaveSourceB : "none", DisplayKeyKind.Event);
+
+        internal string LastWaveProfileTextB => FormatWaveText(_outputState != null ? _outputState.LastWaveB : "none");
+
+        internal string[] LastWaveFramesB => _outputState != null && _outputState.LastWaveFramesB != null ? (string[])_outputState.LastWaveFramesB.Clone() : null;
+
+        internal int LastWaveDurationSecondsB => _outputState != null ? _outputState.LastWaveDurationSecondsB : 0;
 
         internal string ActiveConditionsText => FormatConditionsText(_outputState != null ? _outputState.ActiveConditions : "none");
 
@@ -684,7 +932,6 @@ namespace DGLab.BepInEx
                 case "strength": return T("Strength update", "强度更新");
                 case "wave": return T("Wave output", "波形输出");
                 case "default": return T("Default wave", "默认波形");
-                case "timed": return T("Time-based wave", "按时间波形");
                 case "test": return T("Test output", "测试输出");
                 case "hotkey": return T("Hotkey test", "快捷键测试");
                 case "event": return T("Event output", "事件输出");
@@ -711,7 +958,12 @@ namespace DGLab.BepInEx
                 case "death": return T("Death state", "死亡状态");
                 case "critical": return T("Critical state", "危急状态");
                 case "pain": return T("Pain", "疼痛");
-                case "injury": return T("Physical injury", "身体损伤");
+                case "pain1": return T("Discomfort", "不适");
+                case "pain2": return T("Pain", "疼痛");
+                case "pain3": return T("Severe pain", "剧烈疼痛");
+                case "injury": return T("Injury", "损伤");
+                case "fracture": return T("Fracture", "骨折");
+                case "dislocation": return T("Dislocation", "脱臼");
                 case "bleeding": return T("Bleeding", "出血");
                 case "blood-loss": return T("Hypovolemic", "低血容量");
                 case "hypotension": return T("Hypotension", "低血压");
@@ -759,16 +1011,22 @@ namespace DGLab.BepInEx
 
         internal bool DeviceConnected => _client != null && _client.HasTarget;
 
+        internal bool HasRuntimeOutput => _outputState != null && (_outputState.RuntimeStrengthA > 0 || _outputState.RuntimeStrengthB > 0);
+
         internal bool MiniOverlayEnabledValue
         {
             get => _miniOverlayEnabled.Value;
             set => _miniOverlayEnabled.Value = value;
         }
 
-        internal bool TimeBasedWavesEnabledValue
+        internal bool WaveMonitorEnabledValue
         {
-            get => _enableTimeBasedWaves.Value;
-            set => _enableTimeBasedWaves.Value = value;
+            get => _waveMonitorEnabled == null || _waveMonitorEnabled.Value;
+            set
+            {
+                if (_waveMonitorEnabled != null) _waveMonitorEnabled.Value = value;
+                if (!value && _waveMonitorWindow != null) _waveMonitorWindow.IsShown = false;
+            }
         }
 
         internal bool ConditionMixerEnabledValue
@@ -793,6 +1051,11 @@ namespace DGLab.BepInEx
         {
             _menuOpen = isOpen;
             RefreshOverlayMenu();
+        }
+
+        internal void SetWaveMonitorOpen(bool isOpen)
+        {
+            if (_waveMonitorWindow != null) _waveMonitorWindow.IsShown = isOpen;
         }
 
         internal void ToggleMenuFromMiniOverlay()
@@ -832,10 +1095,10 @@ namespace DGLab.BepInEx
         {
             DisconnectClientIntentional();
             _client = null;
-            _persistent = new DGLabPersistentOutput(_client, SelectWaveForTime, _outputState);
+            _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
             _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
             _conditionMixer = CreateConditionMixer();
-            _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, SelectWaveForTime, _outputState);
+            _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
             RegisterDefaultWaves();
             DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
             _log.LogInfo("DG-Lab disconnected from Socket backend.");
@@ -844,6 +1107,7 @@ namespace DGLab.BepInEx
         private void HandleClientClosed(string reason)
         {
             _log.LogWarning("DG-Lab closed: " + reason);
+            InvalidateQrTexture();
             if (_intentionalDisconnect)
             {
                 _intentionalDisconnect = false;
@@ -884,6 +1148,8 @@ namespace DGLab.BepInEx
             _autoBackendForcedEmbedded = true;
             _externalProbeActive = false;
             _externalProbeDeadline = -1f;
+            GetOrCreateEmbeddedTerminalId();
+            InvalidateQrTexture();
             _pendingReconnectTime = Time.realtimeSinceStartup + 0.2f;
             _log.LogWarning("DG-Lab auto backend fallback to embedded mode: " + reason + ".");
         }
@@ -950,15 +1216,30 @@ namespace DGLab.BepInEx
         private void HandleMessage(DGLab.BepInEx.Protocol.DGLabMessage msg)
         {
             if (_debugLog.Value) _log.LogInfo("DG-Lab msg: " + msg.type + " | " + msg.message);
+            TryParseDeviceStrengthState(msg.message);
             if (!_enableQrOutput.Value) return;
 
-            if (msg.type == "bind" && !string.IsNullOrEmpty(msg.clientId))
+            if (msg.type == "bind" && !string.IsNullOrEmpty(msg.clientId) && (!_runtimeEmbeddedBackend || msg.message == "200"))
             {
-                var qrUrl = _qrService.BuildQrUrl(msg.clientId);
-                _log.LogInfo("DG-Lab backend assigned terminal clientId: " + msg.clientId);
+                var qrId = _runtimeEmbeddedBackend ? GetOrCreateEmbeddedTerminalId() : msg.clientId;
+                var qrUrl = _qrService.BuildQrUrl(qrId);
+                _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded app paired." : "DG-Lab backend assigned terminal clientId: " + msg.clientId);
+                if (_runtimeEmbeddedBackend) _strengthEnvelope?.ForceResend("paired");
                 _log.LogInfo("DG-Lab QR URL: " + qrUrl);
                 _log.LogInfo("DG-Lab local QR image: " + EnsureQrImage(qrUrl));
             }
+        }
+
+        private void TryParseDeviceStrengthState(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message) || !message.StartsWith("strength-", StringComparison.OrdinalIgnoreCase)) return;
+            var parts = message.Substring("strength-".Length).Split('+');
+            if (parts.Length < 4) return;
+            if (!int.TryParse(parts[0], out var strengthA)) return;
+            if (!int.TryParse(parts[1], out var strengthB)) return;
+            if (!int.TryParse(parts[2], out var limitA)) return;
+            if (!int.TryParse(parts[3], out var limitB)) return;
+            _outputState?.SetDeviceStrengthState(strengthA, strengthB, limitA, limitB);
         }
 
         private bool IsMenuTogglePressed()
@@ -992,7 +1273,8 @@ namespace DGLab.BepInEx
             {
                 pressed = true;
             }
-            else if (_menuToggleKey.Value != KeyCode.F10)
+
+            if (!pressed && _menuToggleKey.Value != KeyCode.F10)
             {
                 var nativeToggleKey = ToVirtualKey(_menuToggleKey.Value);
                 pressed = Input.GetKeyDown(_menuToggleKey.Value) || (nativeToggleKey != 0 && IsNativeKeyPressed(nativeToggleKey, ref _nativeConfiguredKeyWasDown));
@@ -1011,6 +1293,88 @@ namespace DGLab.BepInEx
             return true;
         }
 
+        private bool IsWaveMonitorTogglePressed()
+        {
+            if (!_enableMenu.Value || !WaveMonitorEnabledValue || _waitingForMenuKeyBind || !string.IsNullOrEmpty(_waitingForUiKeyBind)) return false;
+            if (Time.realtimeSinceStartup - _lastWaveMonitorToggleTime < 0.25f) return false;
+
+            var key = _waveMonitorToggleKey != null ? _waveMonitorToggleKey.Value : KeyCode.F9;
+            var nativeKey = ToVirtualKey(key);
+            var pressed = false;
+            if (Input.GetKeyDown(key))
+            {
+                pressed = true;
+                if (nativeKey != 0) _nativeWaveMonitorKeyWasDown = IsNativeKeyDown(nativeKey);
+                if (key == KeyCode.F9) _nativeF9WasDown = IsNativeKeyDown(0x78);
+            }
+            else if (nativeKey != 0 && IsNativeKeyPressed(nativeKey, ref _nativeWaveMonitorKeyWasDown))
+            {
+                pressed = true;
+            }
+
+            if (!pressed) return false;
+
+            if (_waveMonitorToggleAltRequired != null && _waveMonitorToggleAltRequired.Value && !IsAltDown()) return false;
+
+            _lastWaveMonitorToggleTime = Time.realtimeSinceStartup;
+            return true;
+        }
+
+        private bool IsMiniOverlayTogglePressed()
+        {
+            if (!_enableMenu.Value || _waitingForMenuKeyBind || !string.IsNullOrEmpty(_waitingForUiKeyBind)) return false;
+            if (Time.realtimeSinceStartup - _lastMiniOverlayToggleTime < 0.25f) return false;
+
+            var key = _miniOverlayToggleKey != null ? _miniOverlayToggleKey.Value : KeyCode.F8;
+            var nativeKey = ToVirtualKey(key);
+            var pressed = false;
+            if (Input.GetKeyDown(key))
+            {
+                pressed = true;
+                if (nativeKey != 0) _nativeMiniOverlayKeyWasDown = IsNativeKeyDown(nativeKey);
+            }
+            else if (nativeKey != 0 && IsNativeKeyPressed(nativeKey, ref _nativeMiniOverlayKeyWasDown))
+            {
+                pressed = true;
+            }
+
+            if (!pressed) return false;
+
+            if (_miniOverlayToggleAltRequired != null && _miniOverlayToggleAltRequired.Value && !IsAltDown()) return false;
+
+            _lastMiniOverlayToggleTime = Time.realtimeSinceStartup;
+            return true;
+        }
+
+        private bool CapturePendingUiKeyBinding()
+        {
+            if (string.IsNullOrEmpty(_waitingForUiKeyBind)) return false;
+
+            var captured = CaptureMenuKeyBinding();
+            if (captured == KeyCode.None) return true;
+
+            if (string.Equals(_waitingForUiKeyBind, "status", StringComparison.OrdinalIgnoreCase))
+            {
+                _miniOverlayToggleKey.Value = captured;
+                if (_miniOverlayToggleAltRequired != null) _miniOverlayToggleAltRequired.Value = IsAltDown();
+                _nativeMiniOverlayKeyWasDown = false;
+                _lastMiniOverlayToggleTime = Time.realtimeSinceStartup;
+                _log.LogInfo("DG-Lab output viewer toggle key changed to " + captured + ". Alt required=" + (_miniOverlayToggleAltRequired != null && _miniOverlayToggleAltRequired.Value) + ".");
+            }
+            else if (string.Equals(_waitingForUiKeyBind, "wave", StringComparison.OrdinalIgnoreCase))
+            {
+                _waveMonitorToggleKey.Value = captured;
+                if (_waveMonitorToggleAltRequired != null) _waveMonitorToggleAltRequired.Value = IsAltDown();
+                _nativeWaveMonitorKeyWasDown = false;
+                _nativeF9WasDown = false;
+                _lastWaveMonitorToggleTime = Time.realtimeSinceStartup;
+                _log.LogInfo("DG-Lab wave viewer toggle key changed to " + captured + ". Alt required=" + (_waveMonitorToggleAltRequired != null && _waveMonitorToggleAltRequired.Value) + ".");
+            }
+
+            _waitingForUiKeyBind = null;
+            return true;
+        }
+
         private static KeyCode CaptureMenuKeyBinding()
         {
             var e = Event.current;
@@ -1023,7 +1387,8 @@ namespace DGLab.BepInEx
 
             // Detect function keys and navigation keys via native API that Unity may miss
             int[] nativeExtras = { 0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x7B, // F1-F12
-                                   0x2D,0x2E,0x24,0x23,0x21,0x22 }; // Insert,Delete,Home,End,PgUp,PgDn
+                                   0x2D,0x2E,0x24,0x23,0x21,0x22, // Insert,Delete,Home,End,PgUp,PgDn
+                                   0xDB,0xDD }; // [ ]
             foreach (var vk in nativeExtras)
             {
                 if ((GetAsyncKeyState(vk) & 0x8001) == 0x8001)
@@ -1045,6 +1410,8 @@ namespace DGLab.BepInEx
             if (vk == 0x23) return KeyCode.End;
             if (vk == 0x21) return KeyCode.PageUp;
             if (vk == 0x22) return KeyCode.PageDown;
+            if (vk == 0xDB) return KeyCode.LeftBracket;
+            if (vk == 0xDD) return KeyCode.RightBracket;
             return KeyCode.None;
         }
 
@@ -1069,6 +1436,11 @@ namespace DGLab.BepInEx
             return (GetAsyncKeyState(virtualKeyCode) & 0x8000) != 0;
         }
 
+        private static bool IsAltDown()
+        {
+            return Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt) || IsNativeKeyDown(0x12);
+        }
+
         private static int ToVirtualKey(KeyCode key)
         {
             if (key >= KeyCode.A && key <= KeyCode.Z) return 0x41 + (key - KeyCode.A);
@@ -1084,6 +1456,8 @@ namespace DGLab.BepInEx
             if (key == KeyCode.End) return 0x23;
             if (key == KeyCode.PageUp) return 0x21;
             if (key == KeyCode.PageDown) return 0x22;
+            if (key == KeyCode.LeftBracket) return 0xDB;
+            if (key == KeyCode.RightBracket) return 0xDD;
             return 0;
         }
 
@@ -1122,61 +1496,18 @@ namespace DGLab.BepInEx
             _log.LogInfo("DG-Lab generated embedded terminal ID for this backend session: " + _embeddedTerminalId.Value);
         }
 
+        private string GetOrCreateEmbeddedTerminalId()
+        {
+            if (!string.IsNullOrWhiteSpace(_embeddedTerminalId.Value)) return _embeddedTerminalId.Value;
+            RefreshEmbeddedTerminalIdIfNeeded(true);
+            return _embeddedTerminalId.Value;
+        }
+
         private static string GenerateSecureSessionId()
         {
             var bytes = new byte[16];
             using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(bytes);
             return new Guid(bytes).ToString("D");
-        }
-
-        private string[] SelectWaveForTime(string key, string[] defaultWave)
-        {
-            if (_enableTimeBasedWaves == null || !_enableTimeBasedWaves.Value) return defaultWave;
-
-            var now = DateTime.Now.TimeOfDay;
-            if (IsNowInRange(now, _intenseTimeRange.Value)) return DGLabWaveLibrary.IntensePulse;
-            if (IsNowInRange(now, _gentleTimeRange.Value)) return DGLabWaveLibrary.GentlePulse;
-            return defaultWave;
-        }
-
-        private string GetCurrentWaveProfileName()
-        {
-            if (_enableTimeBasedWaves == null || !_enableTimeBasedWaves.Value) return T("Default", "默认");
-
-            var now = DateTime.Now.TimeOfDay;
-            if (IsNowInRange(now, _intenseTimeRange.Value)) return T("Intense", "强烈");
-            if (IsNowInRange(now, _gentleTimeRange.Value)) return T("Gentle", "柔和");
-            return T("Default", "默认");
-        }
-
-        private static bool IsNowInRange(TimeSpan now, string range)
-        {
-            if (string.IsNullOrWhiteSpace(range)) return false;
-
-            var parts = range.Split(new[] { '-' });
-            if (parts.Length != 2) return false;
-            if (!TryParseHourMinute(parts[0], out var start)) return false;
-            if (!TryParseHourMinute(parts[1], out var end)) return false;
-
-            if (start <= end) return now >= start && now <= end;
-            return now >= start || now <= end;
-        }
-
-        private static bool TryParseHourMinute(string value, out TimeSpan time)
-        {
-            time = TimeSpan.Zero;
-            if (string.IsNullOrWhiteSpace(value)) return false;
-
-            var parts = value.Trim().Split(new[] { ':' });
-            if (parts.Length != 2) return false;
-
-            int hour;
-            int minute;
-            if (!int.TryParse(parts[0], out hour) || !int.TryParse(parts[1], out minute)) return false;
-            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return false;
-
-            time = new TimeSpan(hour, minute, 0);
-            return true;
         }
 
         private void ObserveBodyState(Body body)
@@ -1200,7 +1531,7 @@ namespace DGLab.BepInEx
             var lowerPainRise = lowerPain - _lastObservedLowerPain;
             var consciousnessDrop = _lastObservedConsciousness - body.consciousness;
 
-            if (body.shock >= 20f && shockRise > 5f)
+            if (body.shock >= 20f && shockRise > 5f && HasInjuryEvidenceForShock(body, upperPainRise, lowerPainRise))
             {
                 DamageHooks.TriggerBodyStateSpike("body-shock", ScaleCriticalSeverity(body.shock / 55f));
             }
@@ -1209,14 +1540,14 @@ namespace DGLab.BepInEx
                 _log.LogInfo("DG-Lab upper body pain spike: pain=" + upperPain.ToString("0.0"));
                 _outputState?.PushInstantCondition("pain");
                 _strengthEnvelope?.TriggerSpike(1, ScaleBodySeverity(upperPain / 85f), "upper-pain");
-                _waveRouter?.TriggerEvent("damage");
+                _waveRouter?.TriggerEvent("damage", 1);
             }
             if (lowerPain >= 20f && lowerPainRise > 5f)
             {
                 _log.LogInfo("DG-Lab lower body pain spike: pain=" + lowerPain.ToString("0.0"));
                 _outputState?.PushInstantCondition("pain");
                 _strengthEnvelope?.TriggerSpike(2, ScaleBodySeverity(lowerPain / 85f), "lower-pain");
-                _waveRouter?.TriggerEvent("damage");
+                _waveRouter?.TriggerEvent("damage", 2);
             }
             if (consciousnessDrop > 20f)
             {
@@ -1233,8 +1564,6 @@ namespace DGLab.BepInEx
         {
             if (body == null) return "no-body";
             if (body.limbs == null || body.limbs.Length < 15) return "no-limbs";
-            if (WorldGeneration.world == null) return "no-world";
-            if (WorldGeneration.world.generatingWorld || !WorldGeneration.world.worldExists) return "no-world";
             return null;
         }
 
@@ -1245,11 +1574,17 @@ namespace DGLab.BepInEx
 
             _outputClearedForNoBody = true;
             _lastInactiveReason = reason;
-            _strengthEnvelope?.Clear("no-body");
+            _strengthEnvelope?.Clear(reason);
             _persistent?.Stop("death");
             _persistent?.Stop("critical");
+            if (_client != null && _client.HasTarget)
+            {
+                _client.SetStrengthA(0);
+                _client.SetStrengthB(0);
+                _client.ClearWaveA();
+                _client.ClearWaveB();
+            }
             _outputState?.Reset(reason);
-            _wasDead = false;
             _wasCritical = false;
             _lastObservedShock = 0f;
             _lastObservedUpperPain = 0f;
@@ -1258,6 +1593,26 @@ namespace DGLab.BepInEx
             _lastObservedBody = null;
             _bodyObservationBaselineReady = false;
             _log.LogInfo("DG-Lab cleared runtime output because no active gameplay body is available: " + reason + ".");
+        }
+
+        private static bool HasInjuryEvidenceForShock(Body body, float upperPainRise, float lowerPainRise)
+        {
+            if (body == null) return false;
+            if (upperPainRise > 2f || lowerPainRise > 2f) return true;
+            if (ValidBodyPercent(body.averagePain, 0f) >= 18f) return true;
+            if (ValidBodyPercent(body.traumaAmount, 0f) >= 8f) return true;
+            if (body.totalBleedSpeed > 0.03f) return true;
+            if (ValidBodyPercent(body.bloodVolume, 100f) <= 85f) return true;
+            if (ValidBodyPercent(body.bloodOxygen, 100f) <= 88f) return true;
+            if (body.painShock > 0.08f) return true;
+            return body.inCardiacArrest;
+        }
+
+        private static float ValidBodyPercent(float value, float fallback)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value)) return fallback;
+            if (value < 0f) return fallback;
+            return Mathf.Clamp(value, 0f, 100f);
         }
 
         private static float ScaleBodySeverity(float value)
@@ -1283,7 +1638,7 @@ namespace DGLab.BepInEx
             _waveRouter.RegisterEvent("dismember", DGLabWaveLibrary.DismemberPulse, WaveEnabled("DismemberWave"), _dismemberWaveDuration, _dismemberWaveCooldown);
             _waveRouter.RegisterEvent("selfharm", DGLabWaveLibrary.SelfHarmPulse, WaveEnabled("SelfHarmWave"), _selfHarmWaveDuration, _selfHarmWaveCooldown);
             _waveRouter.RegisterEvent("shock", DGLabWaveLibrary.ShockSpike, WaveEnabled("ShockWave"), _impactWaveDuration, _impactWaveCooldown);
-            _waveRouter.RegisterEvent("treatment-sting", DGLabWaveLibrary.Sting, WaveEnabled("TreatmentStingWave"), _damageWaveDuration, _damageWaveCooldown);
+            _waveRouter.RegisterEvent("treatment-sting", DGLabWaveLibrary.TreatmentSting, WaveEnabled("TreatmentStingWave"), _damageWaveDuration, _damageWaveCooldown);
         }
 
         public void OnDestroy()
@@ -1324,6 +1679,7 @@ namespace DGLab.BepInEx
             if (profile.Equals("OfficialSocket", StringComparison.OrdinalIgnoreCase))
             {
                 if (_officialSocketUrl != null && !string.IsNullOrWhiteSpace(_officialSocketUrl.Value)) return _officialSocketUrl.Value.Trim();
+                return string.Empty;
             }
             else
             {

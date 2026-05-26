@@ -2,214 +2,211 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-<p align="center">
-  <strong>DG-Lab EXP BodySync</strong><br>
-  A BepInEx 5 mod that maps in-game damage and body conditions to DG-Lab Socket v2 output.
-</p>
-
-<p align="center">
-  <img alt="BepInEx" src="https://img.shields.io/badge/BepInEx-5.4.23.5-blue">
-  <img alt=".NET Framework" src="https://img.shields.io/badge/.NET%20Framework-4.8-purple">
-  <img alt="Unity" src="https://img.shields.io/badge/Unity-2022.3.62f3-black">
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20x64-lightgrey">
-</p>
-
-`DG-Lab EXP BodySync` is a BepInEx 5 mod for `Casualties Unknown`. It maps in-game damage and body conditions to DG-Lab Socket v2 A/B channel output.
-
-It is not a simple damage trigger. It continuously samples body states — pain, shock, consciousness, bleeding, hypoxia, infection, temperature — and mixes output based on severity, body-part bindings, and channel strength limits.
-
-## Safety Warning
+A BepInEx 5 mod for [Casualties Unknown](https://store.steampowered.com/app/4576490/) that maps character injuries, body states, and body-part changes to DG-Lab Socket v2 output.
 
 > [!WARNING]
-> This mod drives real DG-Lab output from game events. Treat it like a real physical stimulation tool, not a visual mod.
-
-- Start with very low A/B strength limits. Increase slowly only after confirming what the current settings feel like.
-- Do not test high values just because the game looks intense. Device output is real, and repeated spikes can feel much stronger than expected.
-- Stop immediately if you feel pain, numbness, dizziness, panic, skin irritation, or anything wrong.
-- Do not use while tired, drunk, sick, distracted, or unable to stop the session quickly.
-- Keep the DG-Lab app or device stop controls reachable at all times. Do not rely only on the in-game menu.
-- Game state can change suddenly. Use within your own limits.
-- You are responsible for your device, body, settings, and safety.
-
-Use less than you think you can handle. The goal is immersion, not proving endurance.
-
-## Target Environment
-
-| Item | Value |
-| --- | --- |
-| Game | `Casualties Unknown` |
-| Mod loader | BepInEx `5.4.23.5` |
-| Runtime | .NET Framework `4.8` |
-| Unity | `2022.3.62f3` |
-| Platform | Windows x64 |
-| DG-Lab protocol | Socket v2 |
+> This mod maps in-game injuries and body states into simulated DG-Lab waveforms and strength changes. Start with low A/B strength limits, keep the DG-Lab app or device stop controls reachable, and stop immediately if you feel pain, numbness, dizziness, panic, skin irritation, or anything wrong.
 
 ## Features
 
-- Embedded DG-Lab WebSocket backend inside the game process.
-- Local QR PNG generation for the DG-Lab app to scan.
-- External backend mode for advanced network setups, with Official Socket and Third-Party Controller profiles.
-- Auto backend selection: tries external first, falls back to embedded if unavailable.
-- Plugin-owned IMGUI control menu — no translator dependency.
-- Compact draggable status overlay.
-- A/B channel strength limits with in-menu sliders.
-- Configurable 15-limb body-part binding for A/B channels.
-- Runtime output scaling from game damage and ongoing body conditions.
-- Offline simulation display when no DG-Lab device is connected.
-- Hover tooltips on all controls.
+- Embedded DG-Lab Socket backend with in-game QR generation for the DG-Lab app.
+- External Socket backend support for existing controllers or custom network setups.
+- A/B channel strength limits, body-part binding, and local-injury routing.
+- Continuous sampling of pain, injury, fracture, dislocation, bleeding, infection, shock, hypoxia, temperature, consciousness, and related states.
+- In-game menu, QR code, status overlay, wave monitor, and debug display.
+- Offline status and waveform display for checking configuration before connecting a device.
 
-## Project Structure
+## How It Works
 
-The runtime is split into three assemblies:
+BodySync is not a simple “output when damaged” trigger. It routes local conditions to the channel bound to the affected body parts, then mixes systemic states such as shock, hypoxia, temperature, and consciousness as background output.
 
-| Assembly | Description |
+Example:
+
+```text
+Channel A: Head,UpTorso,LeftArm,RightArm
+Channel B: DownTorso,LeftLeg,RightLeg
+```
+
+With this binding, head, upper torso, and arms mainly output to A; abdomen and legs mainly output to B; systemic states may affect both channels.
+
+## Requirements
+
+| Item | Requirement |
 | --- | --- |
-| `DGLab.Core.dll` | Socket v2 DTOs, protocol helpers, embedded/external WebSocket transport, `DGLabClient` |
-| `DGLab.Game.dll` | Game hooks, body scoring, output state, strength envelope, wave routing |
-| `DGLab.BepInEx.dll` | BepInEx lifecycle, config, standalone IMGUI, status overlay, QR generation, composition |
+| Game | Casualties Unknown |
+| Mod loader | BepInEx 5.x |
+| DG-Lab protocol | Socket v2 |
+| Runtime | .NET Framework 4.8 / `net48` |
 
 ## Installation
 
-Copy the runtime files to:
+1. Install BepInEx 5.
+2. Copy the whole `DGLab-EXP-BodySync` folder from the release package to:
 
 ```text
-<GameDir>\BepInEx\plugins\DG-Lab\
+<GameDir>\BepInEx\plugins\
 ```
 
-Required files:
+3. Confirm the final path looks like:
 
-- `DGLab.BepInEx.dll`
-- `DGLab.Core.dll`
-- `DGLab.Game.dll`
-- `QRCoder.dll`
-- `websocket-sharp.dll`
+```text
+<GameDir>\BepInEx\plugins\DGLab-EXP-BodySync\
+```
 
-Do not copy config files into the plugin folder. Config files belong under `BepInEx\config`.
+4. The folder should contain at least:
+
+| File | Purpose |
+| --- | --- |
+| `DGLab.BepInEx.dll` | BepInEx plugin entry |
+| `DGLab.Core.dll` | DG-Lab Socket client and protocol |
+| `DGLab.Game.dll` | Game body-state adapter |
+| `QRCoder.dll` | QR generation |
+| `websocket-sharp.dll` | WebSocket transport |
+| `Newtonsoft.Json.dll` | JSON serialization, required if not already provided by the runtime |
+
+## Quick Start
+
+1. Start the game and press `F10` to open the DG-Lab menu.
+2. Use the embedded backend, or make sure your external Socket backend is reachable.
+3. Keep the phone and the PC running the game on the same local network.
+4. Select the correct LAN address in the menu and refresh the QR code.
+5. Scan the QR code with the DG-Lab app.
+6. Set safe low A/B strength limits.
+7. Configure A/B body-part bindings.
+8. Open the status overlay and wave monitor to verify connection, strength, and output.
+
+## In-Game Menu
+
+Default menu key: `F10`. The menu includes:
+
+- Device connection state and Socket backend switch/restart.
+- QR generation, refresh, and LAN address selection.
+- A/B maximum strength.
+- A/B body-part binding.
+- Status overlay, wave monitor, and debug display toggles.
+
+Default shortcuts:
+
+| Shortcut | Action | Notes |
+| --- | --- | --- |
+| `F10` | Toggle main menu | Configurable |
+| `Alt + [` | Toggle wave monitor | `Alt` required by default |
+| `Alt + ]` | Toggle status overlay | `Alt` required by default |
+
+Developer/demo hotkeys are disabled by default. Set `Control/EnableHotkeys = true` to enable them:
+
+| Shortcut | Action |
+| --- | --- |
+| `1` / `2` | Apply menu strength to channel A / B |
+| `Q` / `A` | Increase / decrease channel A strength |
+| `W` / `S` | Increase / decrease channel B strength |
+| `Z` / `X` | Clear channel A / B waveform |
+| `Space` | Send a test waveform to enabled channels |
 
 ## Configuration
 
-Main BepInEx config:
+BepInEx generates config files automatically. Config files do not need to be placed in the plugin folder.
 
-```text
-<GameDir>\BepInEx\config\dglab.socket.cfg
-```
+| File | Purpose |
+| --- | --- |
+| `<GameDir>\BepInEx\config\dglab.socket.cfg` | Main config: enable state, backend mode, QR, and network address |
+| `<GameDir>\BepInEx\config\dglab.settings.cfg` | Advanced config: strength, waves, UI, body binding, and debug options |
 
 Common entries:
 
-| Entry | Description |
-| --- | --- |
-| `General/Enabled` | Enables or disables the mod |
-| `Network/AutoSelectBackend` | Try external backend first, fall back to embedded if unavailable |
-| `Network/UseEmbeddedServer` | Manual mode when AutoSelectBackend is false |
-| `Network/EmbeddedServerAddress` | Address advertised in the QR (leave empty to auto-detect LAN IP) |
-| `Network/EmbeddedServerPort` | Embedded backend port (default `9999`) |
-| `Network/RefreshEmbeddedTerminalIdOnStart` | Generate a new terminal ID on each backend start |
-| `Network/InvalidateQrOnDisconnect` | Invalidate QR when the phone disconnects |
-| `Network/ExternalBackendProfile` | `OfficialSocket` or `ThirdPartyController` |
-| `Network/OfficialSocketUrl` | Official DG-Lab Socket backend URL |
-| `Network/ThirdPartyControllerUrl` | Third-party controller backend URL |
-| `Network/QrWebSocketUrl` | Override WebSocket URL embedded in the QR (leave empty to use active backend) |
-| `Network/EnableQrOutput` | Generate a local QR PNG |
-| `UI/EnableMenu` | Enable the in-game menu |
+| Entry | Default | Description |
+| --- | --- | --- |
+| `General/Enabled` | `true` | Enable or disable the plugin |
+| `Network/AutoSelectBackend` | `true` | Try external backend first, then fall back to embedded QR backend |
+| `Network/UseEmbeddedServer` | `true` | Use embedded backend when auto-selection is disabled |
+| `Network/EmbeddedServerAddress` | empty | LAN IP used in QR; empty means auto-detect |
+| `Network/EmbeddedServerPort` | `9999` | Embedded WebSocket backend port |
+| `Network/ThirdPartyControllerUrl` | `ws://127.0.0.1:9999` | Third-party controller backend URL |
+| `Network/OfficialSocketUrl` | empty | Official Socket backend URL |
+| `Control/StrengthA` | `100` | Channel A runtime strength limit, range `0-200` |
+| `Control/StrengthB` | `100` | Channel B runtime strength limit, range `0-200` |
+| `Control/EnableDamageHook` | `true` | Enable damage and body-state hooks |
+| `Wave/EnableWaveEvents` | `true` | Enable event wave output |
+| `Wave/EnableConditionMixer` | `true` | Enable continuous body-state wave mixing |
+| `Binding/ChannelABodyParts` | `Head,UpTorso,DownTorso,LeftArm,RightArm` | Body parts bound to channel A |
+| `Binding/ChannelBBodyParts` | `LeftLeg,RightLeg` | Body parts bound to channel B |
+| `UI/MenuToggleKey` | `F10` | Main menu key |
+| `UI/OutputMonitorToggleKey` | `RightBracket` | Status overlay key |
+| `UI/WaveViewerToggleKey` | `LeftBracket` | Wave monitor key |
+| `UI/Language` | `English` | UI language: `English` or `Chinese` |
 
-Advanced config:
+## Body Binding
+
+Binding values can be exact body-part names, numeric indices, or group aliases. Separate multiple values with commas.
+
+| Index | Name | Region |
+| --- | --- | --- |
+| `0` | `Head` | Head |
+| `1` | `UpTorso` | Upper torso / chest |
+| `2` | `DownTorso` | Lower torso / abdomen |
+| `3` | `LeftUpperArm` | Left upper arm |
+| `4` | `LeftForearm` | Left forearm |
+| `5` | `LeftHand` | Left hand |
+| `6` | `RightUpperArm` | Right upper arm |
+| `7` | `RightForearm` | Right forearm |
+| `8` | `RightHand` | Right hand |
+| `9` | `LeftThigh` | Left thigh |
+| `10` | `LeftLowerLeg` | Left lower leg |
+| `11` | `LeftFoot` | Left foot |
+| `12` | `RightThigh` | Right thigh |
+| `13` | `RightLowerLeg` | Right lower leg |
+| `14` | `RightFoot` | Right foot |
+
+Common groups:
+
+| Group | Parts |
+| --- | --- |
+| `LeftArm` / `RightArm` | Upper arm, forearm, and hand on that side |
+| `LeftLeg` / `RightLeg` | Thigh, lower leg, and foot on that side |
+| `Arms` / `Hands` | Both arms / both hands |
+| `Legs` / `Feet` | Both legs / both feet |
+| `UpperBody` / `LowerBody` | Upper body / lower body |
+
+## Network and QR
+
+Embedded backend default listen address:
 
 ```text
-<GameDir>\BepInEx\config\dglab.settings.cfg
+0.0.0.0:9999
 ```
 
-Important entries:
+`0.0.0.0` means the server accepts connections on all network adapters. The QR code still needs one concrete address that the phone can reach, such as `192.168.x.x`. Virtual adapters, proxies, or VPNs may cause auto-detection to choose the wrong address.
 
-- `Control/StrengthA` and `Control/StrengthB` — maximum runtime strength (0–200). Events scale proportionally up to these values.
-- `Control/EnableDamageHook` — enable game damage and body-state hooks.
-- `Wave/EnableWaveEvents` — send waveform pulses on hit events.
-- `Wave/EnableConditionMixer` — continuously sample body conditions and mix persistent waves.
-- `Binding/ChannelABodyParts` — body parts mapped to channel A.
-- `Binding/ChannelBBodyParts` — body parts mapped to channel B.
-- `UI/MenuToggleKey` — key to toggle the menu (default `F10`). F1–F12 and navigation keys are supported.
-- `UI/MenuToggleAltRequired` — require `Alt + MenuToggleKey` to toggle.
-- `UI/MiniOverlayEnabled` — show the compact status overlay.
+Prefer selecting the LAN address from the in-game menu and refreshing the QR code. If that is not enough, edit:
 
-Body binding supports 15 limb indices:
+```text
+<GameDir>\BepInEx\config\dglab.socket.cfg
+Network/EmbeddedServerAddress = 192.168.x.x
+```
 
-| Index | Body part |
-| --- | --- |
-| `0` | `Head` |
-| `1` | `UpTorso` |
-| `2` | `DownTorso` |
-| `3` | `ArmFUpper` |
-| `4` | `ArmFLower` |
-| `5` | `HandF` |
-| `6` | `ArmBUpper` |
-| `7` | `ArmBLower` |
-| `8` | `HandB` |
-| `9` | `LegFUpper` |
-| `10` | `LegFLower` |
-| `11` | `FootF` |
-| `12` | `LegBUpper` |
-| `13` | `LegBLower` |
-| `14` | `FootB` |
-
-Group names: `ArmF` = `3,4,5`, `ArmB` = `6,7,8`, `LegF` = `9,10,11`, `LegB` = `12,13,14`. Combine with commas, e.g. `Head,UpTorso,ArmF,ArmB`.
-
-## QR and Network
-
-Embedded backend mode starts a WebSocket server inside the game process, listening on `0.0.0.0:9999` by default.
-
-Local QR image:
+Local QR image path:
 
 ```text
 <GameDir>\BepInEx\cache\DG-Lab\dglab-qr.png
 ```
 
-The main menu provides: Restart Backend, Refresh QR, Open QR File, and Disconnect. The mini overlay is status-only to avoid accidental operation.
-
-If the QR shows a wrong IP (e.g. a virtual adapter address), set `Network/EmbeddedServerAddress` to your LAN IP manually:
-
-```text
-192.168.x.x
-```
-
-Clicking **Restart Backend** in the menu clears the cached LAN IP and reconnects. If the mod is already in embedded mode, it stays in embedded mode.
-
-## UI
-
-- `F10` toggles the main menu (configurable; F1–F12 and navigation keys supported; Alt modifier optional).
-- The main menu contains: status, backend profile toggle, QR actions, strength limits, channel bindings, and settings.
-- The mini overlay is a draggable status view showing mode, device state, live strength, limits, recent output, and active conditions.
-- Hover over any control to see a tooltip description.
-
 ## Build
 
 1. Install a .NET SDK capable of building `net48` projects.
-2. Put required reference DLLs under `BepInExPlugin\lib`.
-3. All third-party DLLs are stored in-repo under `BepInExPlugin\lib`. No external download step is needed once the repo is complete.
-4. For a clean GitHub release, ensure the following DLLs are present under `BepInExPlugin\lib`:
-
-```text
-QRCoder.dll
-websocket-sharp.dll
-Newtonsoft.Json.dll
-BepInEx.dll
-0Harmony.dll
-UnityEngine*.dll
-Assembly-CSharp.dll
-```
-
-5. From the project root, run:
+2. Put BepInEx, Unity, game, and third-party reference DLLs under `BepInExPlugin\lib`, or keep the project reference paths valid.
+3. From the project root, run:
 
 ```powershell
 dotnet build "BepInExPlugin\DGLab.BepInEx.csproj" -c Release
 ```
 
-6. Deploy output from `BepInExPlugin\bin\Release\net48\` to `<GameDir>\BepInEx\plugins\DG-Lab\`.
+4. Package runtime files into a `DGLab-EXP-BodySync` folder and deploy it to `<GameDir>\BepInEx\plugins\`.
 
-## Third-Party Credits
+## Credits
 
-- BepInEx: Unity mod loader, used as the plugin runtime.
-- HarmonyX / Harmony: runtime patching library used through BepInEx.
-- QRCoder: QR code generation, used to produce the local DG-Lab scan PNG.
-- websocket-sharp: WebSocket server/client library for DG-Lab Socket transport.
-- Newtonsoft.Json: JSON serialization for DG-Lab Socket messages.
-- DG-Lab Socket protocol and DG-Lab app/device ecosystem: this project only integrates with public protocol behavior and does not own DG-Lab.
-- Casualties Unknown: target game. This is an unofficial mod with no affiliation to the game developer.
+- [BepInEx](https://github.com/BepInEx/BepInEx) / [HarmonyX](https://github.com/BepInEx/HarmonyX)
+- [QRCoder](https://github.com/Shane32/QRCoder)
+- [websocket-sharp](https://github.com/sta/websocket-sharp)
+- [Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json)
+- [DG-LAB-OPENSOURCE](https://github.com/DG-LAB-OPENSOURCE/DG-LAB-OPENSOURCE)
+- [Casualties Unknown](https://store.steampowered.com/app/4576490)

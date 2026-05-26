@@ -101,6 +101,16 @@ namespace DGLab.BepInEx
             Apply(2, reason, force: true);
         }
 
+        public void ForceResend(string reason)
+        {
+            _lastSentStrengthA = -1;
+            _lastSentStrengthB = -1;
+            _nextSendTimeA = 0f;
+            _nextSendTimeB = 0f;
+            Apply(1, reason, force: true);
+            Apply(2, reason, force: true);
+        }
+
         public void Tick()
         {
             var now = Time.time;
@@ -129,14 +139,21 @@ namespace DGLab.BepInEx
         {
             var maxProvider = channel == 2 ? _maxStrengthBProvider : _maxStrengthAProvider;
             var ratio = channel == 2 ? _currentRatioB : _currentRatioA;
-            var maxStrength = Mathf.Clamp(maxProvider != null ? maxProvider() : 0, 0, 200);
-            var strength = Mathf.Clamp(Mathf.RoundToInt(maxStrength * ratio), 0, maxStrength);
+            var configuredMax = Mathf.Clamp(maxProvider != null ? maxProvider() : 0, 0, 200);
+            var deviceLimit = _state != null && _state.HasDeviceStrengthState
+                ? Mathf.Clamp(channel == 2 ? _state.DeviceLimitB : _state.DeviceLimitA, 0, 200)
+                : 200;
+            var effectiveMax = Mathf.Min(configuredMax, deviceLimit);
+            var strength = Mathf.Clamp(Mathf.RoundToInt(effectiveMax * Mathf.Clamp01(ratio)), 0, effectiveMax);
             _state?.SetStrength(channel, strength, reason);
 
             var now = Time.time;
             var nextSendTime = channel == 2 ? _nextSendTimeB : _nextSendTimeA;
             var lastSentStrength = channel == 2 ? _lastSentStrengthB : _lastSentStrengthA;
             if (!force && now < nextSendTime && Mathf.Abs(strength - lastSentStrength) < 2) return;
+
+            var client = _clientProvider != null ? _clientProvider() : null;
+            if (client == null || !client.HasTarget) return;
 
             if (channel == 2)
             {
@@ -149,8 +166,6 @@ namespace DGLab.BepInEx
                 _lastSentStrengthA = strength;
             }
 
-            var client = _clientProvider != null ? _clientProvider() : null;
-            if (client == null || !client.HasTarget) return;
             if (channel == 2) client.SetStrengthB(strength);
             else client.SetStrengthA(strength);
         }

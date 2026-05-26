@@ -4,9 +4,11 @@ namespace DGLab.BepInEx
     public sealed class DGLabPersistentOutput
     {
         public delegate string[] WaveSelector(string stateKey, string[] defaultWave);
+        public delegate bool ChannelEnabledProvider(int channel);
 
         private readonly DGLabClient _client;
         private readonly WaveSelector _waveSelector;
+        private readonly ChannelEnabledProvider _channelEnabledProvider;
         private readonly DGLabOutputState _state;
         private readonly object _lock = new object();
         private readonly Dictionary<string, PersistentState> _states = new Dictionary<string, PersistentState>();
@@ -19,11 +21,12 @@ namespace DGLab.BepInEx
             public bool Active;
         }
 
-        public DGLabPersistentOutput(DGLabClient client, WaveSelector waveSelector = null, DGLabOutputState state = null)
+        public DGLabPersistentOutput(DGLabClient client, WaveSelector waveSelector = null, DGLabOutputState state = null, ChannelEnabledProvider channelEnabledProvider = null)
         {
             _client = client;
             _waveSelector = waveSelector;
             _state = state;
+            _channelEnabledProvider = channelEnabledProvider;
         }
 
         public void Start(string key, string[] wave, int durationSeconds)
@@ -66,13 +69,26 @@ namespace DGLab.BepInEx
                 if (!state.Active || now < state.NextSendTime) continue;
 
                 var selectedWave = _waveSelector != null ? _waveSelector(kvp.Key, state.Wave) : state.Wave;
-                _state?.SetWave(kvp.Key, selectedWave == state.Wave ? "default" : "timed");
                 if (_client != null && _client.HasTarget)
                 {
-                    _client.SendWaveA(selectedWave, state.DurationSeconds);
+                    if (IsChannelEnabled(1))
+                    {
+                        _state?.SetWave(1, kvp.Key, "default", selectedWave, state.DurationSeconds);
+                        _client.SendWaveA(selectedWave, state.DurationSeconds);
+                    }
+                    if (IsChannelEnabled(2))
+                    {
+                        _state?.SetWave(2, kvp.Key, "default", selectedWave, state.DurationSeconds);
+                        _client.SendWaveB(selectedWave, state.DurationSeconds);
+                    }
                 }
                 state.NextSendTime = now + state.DurationSeconds;
             }
+        }
+
+        private bool IsChannelEnabled(int channel)
+        {
+            return _channelEnabledProvider == null || _channelEnabledProvider(channel);
         }
     }
 }

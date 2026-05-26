@@ -60,14 +60,16 @@ namespace DGLab.BepInEx
         private ConfigEntry<bool> _menuShowOnStart;
         private ConfigEntry<KeyCode> _menuToggleKey;
         private ConfigEntry<bool> _menuToggleAltRequired;
+        private ConfigEntry<KeyCode> _miniOverlayToggleKey;
+        private ConfigEntry<bool> _miniOverlayToggleAltRequired;
+        private ConfigEntry<KeyCode> _waveMonitorToggleKey;
+        private ConfigEntry<bool> _waveMonitorToggleAltRequired;
+        private ConfigEntry<bool> _waveMonitorEnabled;
         private ConfigEntry<string> _uiLanguage;
         private ConfigEntry<bool> _miniOverlayEnabled;
         private ConfigEntry<string> _channelABodyParts;
         private ConfigEntry<string> _channelBBodyParts;
-        private ConfigEntry<bool> _enableTimeBasedWaves;
         private ConfigEntry<bool> _enableConditionMixer;
-        private ConfigEntry<string> _gentleTimeRange;
-        private ConfigEntry<string> _intenseTimeRange;
         private ConfigEntry<bool> _debugLog;
         private ConfigEntry<bool> _realtimeTestLog;
         private ConfigEntry<float> _realtimeTestLogInterval;
@@ -91,7 +93,7 @@ namespace DGLab.BepInEx
             _thirdPartyControllerUrl = Config.Bind("Network", "ThirdPartyControllerUrl", "ws://127.0.0.1:9999", Text("Third-party controller backend URL. Used when ExternalBackendProfile is ThirdPartyController.", "第三方控制器后端地址。ExternalBackendProfile 为 ThirdPartyController 时使用。"));
             _qrWebSocketUrl = Config.Bind("Network", "QrWebSocketUrl", "", Text("Optional WebSocket URL embedded in the DG-Lab scan QR. Leave empty to use the active backend URL.", "可选：写入 DG-Lab 扫码二维码的 WebSocket 地址。留空时使用当前后端地址。"));
             _enableQrOutput = Config.Bind("Network", "EnableQrOutput", true, Text("Generate a local QR PNG whenever the scan URL is available or changes.", "扫码地址可用或变化时生成本地二维码 PNG。"));
-            _enableMenu = Config.Bind("UI", "EnableMenu", true, Text("Enable the in-game IMGUI control menu and compact status overlay.", "启用游戏内 IMGUI 控制菜单和迷你状态悬浮窗。"));
+            _enableMenu = Config.Bind("UI", "EnableMenu", true, Text("Enable the in-game IMGUI control menu, output monitor, and wave viewer.", "启用游戏内 IMGUI 控制菜单、输出监视器和波形查看器。"));
 
             _advancedConfigPath = Path.Combine(Paths.ConfigPath, AdvancedConfigFileName);
             MigrateLegacyAdvancedConfig(_advancedConfigPath);
@@ -162,10 +164,7 @@ namespace DGLab.BepInEx
             _dislocateWaveCooldown = _advancedConfig.Bind("Wave", "DislocateWaveCooldown", 3, Cooldown(Text("Wave cooldown for dislocation events.", "脱臼事件波形冷却时间。")));
             _dismemberWaveCooldown = _advancedConfig.Bind("Wave", "DismemberWaveCooldown", 6, Cooldown(Text("Wave cooldown for dismember events.", "断肢事件波形冷却时间。")));
             _selfHarmWaveCooldown = _advancedConfig.Bind("Wave", "SelfHarmWaveCooldown", 6, Cooldown(Text("Wave cooldown for self-harm events.", "自伤事件波形冷却时间。")));
-            _enableTimeBasedWaves = _advancedConfig.Bind("Wave", "EnableTimeBasedWaves", true, Text("Select wave profiles by local time ranges.", "按本地时间段选择波形配置。"));
             _enableConditionMixer = _advancedConfig.Bind("Wave", "EnableConditionMixer", true, Text("Sample ongoing body conditions and mix persistent waves for pain, sickness, infection, oxygen, hunger, thirst, temperature, fatigue, mood, and shock.", "采样持续身体状态，并为疼痛、疾病、感染、氧气、饥饿、口渴、温度、疲劳、情绪和休克混合持续波形。"));
-            _gentleTimeRange = _advancedConfig.Bind("Wave", "GentleTimeRange", "00:00-08:00", Text("Local time range for the gentle wave profile, HH:mm-HH:mm.", "柔和波形的本地时间段，格式 HH:mm-HH:mm。"));
-            _intenseTimeRange = _advancedConfig.Bind("Wave", "IntenseTimeRange", "20:00-23:59", Text("Local time range for the intense wave profile, HH:mm-HH:mm.", "强烈波形的本地时间段，格式 HH:mm-HH:mm。"));
         }
 
         private void BindUiConfig()
@@ -174,14 +173,19 @@ namespace DGLab.BepInEx
             _menuShowOnStart = _advancedConfig.Bind("UI", "MenuShowOnStart", false, Text("Legacy setting. The main menu no longer opens automatically; use F10.", "旧设置。主菜单不再自动打开；请使用 F10。"));
             _menuToggleKey = _advancedConfig.Bind("UI", "MenuToggleKey", KeyCode.F10, Text("Menu toggle key. Use with Alt if MenuToggleAltRequired is true.", "菜单切换键。若启用 MenuToggleAltRequired，则需配合 Alt 使用。"));
             _menuToggleAltRequired = _advancedConfig.Bind("UI", "MenuToggleAltRequired", false, Text("Require Alt + MenuToggleKey to toggle the menu.", "要求 Alt + 菜单切换键 才能开关菜单。"));
+            _miniOverlayToggleKey = _advancedConfig.Bind("UI", "OutputMonitorToggleKey", KeyCode.RightBracket, Text("Output monitor toggle key.", "输出监视器切换键。"));
+            _miniOverlayToggleAltRequired = _advancedConfig.Bind("UI", "OutputMonitorToggleAltRequired", true, Text("Require Alt + OutputMonitorToggleKey to toggle the output monitor.", "要求 Alt + 输出监视器按键 才能开关输出监视器。"));
+            _waveMonitorToggleKey = _advancedConfig.Bind("UI", "WaveViewerToggleKey", KeyCode.LeftBracket, Text("Wave viewer toggle key.", "波形查看器切换键。"));
+            _waveMonitorToggleAltRequired = _advancedConfig.Bind("UI", "WaveViewerToggleAltRequired", true, Text("Require Alt + WaveViewerToggleKey to toggle the wave viewer.", "要求 Alt + 波形查看器按键 才能开关波形查看器。"));
             _uiLanguage = _advancedConfig.Bind("UI", "Language", "English", Text("UI language: English or Chinese.", "界面语言：English 或 Chinese。"));
-            _miniOverlayEnabled = _advancedConfig.Bind("UI", "MiniOverlayEnabled", true, Text("Show a persistent compact status window. Controls stay in the main menu.", "显示常驻迷你状态悬浮窗。控制项只保留在主菜单。"));
+            _miniOverlayEnabled = _advancedConfig.Bind("UI", "OutputMonitorEnabled", true, Text("Show a persistent compact output monitor. Controls stay in the main menu.", "显示常驻迷你输出监视器。控制项只保留在主菜单。"));
+            _waveMonitorEnabled = _advancedConfig.Bind("UI", "WaveViewerEnabled", true, Text("Show the wave viewer window used to inspect the current output waveform.", "显示波形查看器窗口，用于查看当前实际输出的波形。"));
         }
 
         private void BindBindingConfig()
         {
-            _channelABodyParts = _advancedConfig.Bind("Binding", "ChannelABodyParts", "Head,UpTorso,DownTorso,ArmF,ArmB", Text("Body parts mapped to channel A. Use friendly groups like UpperBody, LowerBody, Arms, Hands, Legs, Feet, or precise limb names/0-14 indices.", "映射到 A 通道的身体部位。可用上半身、下半身、双臂、双手、双腿、双脚，也可用精确 limb 名称或 0-14 序号。"));
-            _channelBBodyParts = _advancedConfig.Bind("Binding", "ChannelBBodyParts", "LegF,LegB", Text("Body parts mapped to channel B. Use commas to combine groups, for example Legs,Feet or LowerBody.", "映射到 B 通道的身体部位。用逗号组合，例如 双腿,双脚 或 下半身。"));
+            _channelABodyParts = _advancedConfig.Bind("Binding", "ChannelABodyParts", "Head,UpTorso,DownTorso,LeftArm,RightArm", Text("Body parts mapped to channel A. Use friendly groups like UpperBody, LowerBody, Arms, Hands, Legs, Feet, or precise limb names/0-14 indices.", "映射到 A 通道的身体部位。可用上半身、下半身、双臂、双手、双腿、双脚，也可用精确 limb 名称或 0-14 序号。"));
+            _channelBBodyParts = _advancedConfig.Bind("Binding", "ChannelBBodyParts", "LeftLeg,RightLeg", Text("Body parts mapped to channel B. Use commas to combine groups, for example Legs,Feet or LowerBody.", "映射到 B 通道的身体部位。用逗号组合，例如 双腿,双脚 或 下半身。"));
         }
 
         private void BindDebugConfig()

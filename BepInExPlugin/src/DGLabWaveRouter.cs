@@ -7,11 +7,13 @@ namespace DGLab.BepInEx
     public sealed class DGLabWaveRouter
     {
         public delegate string[] WaveSelector(string eventKey, string[] defaultWave);
+        public delegate bool ChannelEnabledProvider(int channel);
 
         private readonly ManualLogSource _log;
         private readonly DGLabClient _client;
         private readonly DGLabOutputState _state;
         private readonly WaveSelector _waveSelector;
+        private readonly ChannelEnabledProvider _channelEnabledProvider;
         private readonly Dictionary<string, string[]> _eventWaves = new Dictionary<string, string[]>();
         private readonly Dictionary<string, ConfigEntry<bool>> _eventEnabled = new Dictionary<string, ConfigEntry<bool>>();
         private readonly Dictionary<string, ConfigEntry<int>> _eventDuration = new Dictionary<string, ConfigEntry<int>>();
@@ -19,13 +21,14 @@ namespace DGLab.BepInEx
         private readonly Dictionary<string, float> _lastEventTime = new Dictionary<string, float>();
         private readonly DGLabPersistentOutput _persistent;
 
-        public DGLabWaveRouter(ManualLogSource log, DGLabClient client, DGLabPersistentOutput persistent, WaveSelector waveSelector = null, DGLabOutputState state = null)
+        public DGLabWaveRouter(ManualLogSource log, DGLabClient client, DGLabPersistentOutput persistent, WaveSelector waveSelector = null, DGLabOutputState state = null, ChannelEnabledProvider channelEnabledProvider = null)
         {
             _log = log;
             _client = client;
             _persistent = persistent;
             _waveSelector = waveSelector;
             _state = state;
+            _channelEnabledProvider = channelEnabledProvider;
         }
 
         public void RegisterEvent(
@@ -41,7 +44,7 @@ namespace DGLab.BepInEx
             _eventCooldown[eventKey] = cooldownSeconds;
         }
 
-        public bool TriggerEvent(string eventKey)
+        public bool TriggerEvent(string eventKey, int channelMask = 1)
         {
             if (!_eventEnabled.TryGetValue(eventKey, out var enabled) || !enabled.Value)
             {
@@ -66,11 +69,19 @@ namespace DGLab.BepInEx
 
             if (_eventDuration.TryGetValue(eventKey, out var duration))
             {
-                var selectedWave = _waveSelector != null ? _waveSelector(eventKey, wave) : wave;
-                _state?.SetWave(eventKey, selectedWave == wave ? "default" : "timed");
+                var selectedWave = wave;
                 if (_client != null && _client.HasTarget)
                 {
-                    _client.SendWaveA(selectedWave, duration.Value);
+                    if ((channelMask & 1) != 0 && IsChannelEnabled(1))
+                    {
+                        _state?.SetWave(1, eventKey, "default", selectedWave, duration.Value);
+                        _client.SendWaveA(selectedWave, duration.Value);
+                    }
+                    if ((channelMask & 2) != 0 && IsChannelEnabled(2))
+                    {
+                        _state?.SetWave(2, eventKey, "default", selectedWave, duration.Value);
+                        _client.SendWaveB(selectedWave, duration.Value);
+                    }
                 }
                 return true;
             }
@@ -86,6 +97,11 @@ namespace DGLab.BepInEx
         public void StopPersistent(string stateKey)
         {
             _persistent?.Stop(stateKey);
+        }
+
+        private bool IsChannelEnabled(int channel)
+        {
+            return _channelEnabledProvider == null || _channelEnabledProvider(channel);
         }
     }
 }

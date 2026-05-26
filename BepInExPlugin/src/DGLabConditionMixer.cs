@@ -17,6 +17,7 @@ namespace DGLab.BepInEx
         private readonly DGLabStrengthEnvelope _strengthEnvelope;
         private readonly Func<string> _channelABindingProvider;
         private readonly Func<string> _channelBBindingProvider;
+        private readonly Func<int, bool> _channelEnabledProvider;
         private readonly Func<bool> _testLogEnabledProvider;
         private readonly Func<float> _testLogIntervalProvider;
         private readonly List<ConditionLayer> _layers = new List<ConditionLayer>();
@@ -40,6 +41,7 @@ namespace DGLab.BepInEx
             public string Key;
             public float Severity;
             public string[] Wave;
+            public bool Regional;
         }
 
         public DGLabConditionMixer(
@@ -49,6 +51,7 @@ namespace DGLab.BepInEx
             DGLabStrengthEnvelope strengthEnvelope = null,
             Func<string> channelABindingProvider = null,
             Func<string> channelBBindingProvider = null,
+            Func<int, bool> channelEnabledProvider = null,
             Func<bool> testLogEnabledProvider = null,
             Func<float> testLogIntervalProvider = null)
         {
@@ -58,12 +61,13 @@ namespace DGLab.BepInEx
             _strengthEnvelope = strengthEnvelope;
             _channelABindingProvider = channelABindingProvider;
             _channelBBindingProvider = channelBBindingProvider;
+            _channelEnabledProvider = channelEnabledProvider;
             _testLogEnabledProvider = testLogEnabledProvider;
             _testLogIntervalProvider = testLogIntervalProvider;
         }
 
         public DGLabConditionMixer(DGLabClient client, DGLabOutputState state, DGLabStrengthEnvelope strengthEnvelope = null)
-            : this(null, client, state, strengthEnvelope, null, null, null, null)
+            : this(null, client, state, strengthEnvelope, null, null, null, null, null)
         {
         }
 
@@ -109,6 +113,8 @@ namespace DGLab.BepInEx
             if (_layers.Count == 0)
             {
                 _state?.SetConditions("none");
+                _state?.SetWave(1, "condition", "none", null, 0);
+                _state?.SetWave(2, "condition", "none", null, 0);
                 _state?.SetOutputConditions("none", "none");
                 _strengthEnvelope?.SetSustained(1, 0f, "condition-clear");
                 _strengthEnvelope?.SetSustained(2, 0f, "condition-clear");
@@ -116,30 +122,29 @@ namespace DGLab.BepInEx
             }
 
             var active = _layers.OrderByDescending(layer => layer.Severity).ToArray();
-            var waveLayers = active.Take(4).ToArray();
             var signature = string.Join("+", active.Take(8).Select(layer => layer.Key).ToArray());
-            var waveLayersA = BuildChannelWaveLayers(_channelALayers, active);
-            var waveLayersB = BuildChannelWaveLayers(_channelBLayers, active);
+            var waveLayersA = BuildChannelWaveLayers(1, _channelALayers, active);
+            var waveLayersB = BuildChannelWaveLayers(2, _channelBLayers, active);
             var signatureA = BuildSignature(waveLayersA);
             var signatureB = BuildSignature(waveLayersB);
             var mixedWaveA = Mix(waveLayersA);
             var mixedWaveB = Mix(waveLayersB);
-
             _strengthEnvelope?.SetSustained(1, _sustainedRatioA, "condition");
             _strengthEnvelope?.SetSustained(2, _sustainedRatioB, "condition");
-            _state?.SetWave("condition", waveLayers.Length > 1 ? "mixed:" + string.Join("+", waveLayers.Select(layer => layer.Key).ToArray()) : signature);
+            _state?.SetWave(1, "condition", _sustainedRatioA > 0f ? (waveLayersA.Length > 1 ? "mixed:" + signatureA : signatureA) : "none", _sustainedRatioA > 0f ? mixedWaveA : null, _sustainedRatioA > 0f ? SendDurationSeconds : 0);
+            _state?.SetWave(2, "condition", _sustainedRatioB > 0f ? (waveLayersB.Length > 1 ? "mixed:" + signatureB : signatureB) : "none", _sustainedRatioB > 0f ? mixedWaveB : null, _sustainedRatioB > 0f ? SendDurationSeconds : 0);
             _state?.SetConditions(signature);
             _state?.SetOutputConditions(_sustainedRatioA > 0f ? signatureA : "none", _sustainedRatioB > 0f ? signatureB : "none");
 
             if (_client == null || !_client.HasTarget) return;
 
-            if (now >= _nextSendTimeA || signatureA != _lastSignatureA || signature != _lastSignature)
+            if (IsChannelEnabled(1) && (now >= _nextSendTimeA || signatureA != _lastSignatureA || signature != _lastSignature))
             {
                 _client.SendWaveA(mixedWaveA, SendDurationSeconds);
                 _nextSendTimeA = now + SendDurationSeconds;
                 _lastSignatureA = signatureA;
             }
-            if (now >= _nextSendTimeB || signatureB != _lastSignatureB || signature != _lastSignature)
+            if (IsChannelEnabled(2) && (now >= _nextSendTimeB || signatureB != _lastSignatureB || signature != _lastSignature))
             {
                 _client.SendWaveB(mixedWaveB, SendDurationSeconds);
                 _nextSendTimeB = now + SendDurationSeconds;
@@ -164,8 +169,8 @@ namespace DGLab.BepInEx
             var channelARegionalLabel = "none";
             var channelBRegionalLabel = "none";
             var brokenOrDislocated = 0f;
-            var channelABinding = _channelABindingProvider != null ? _channelABindingProvider() : "Head,UpTorso,DownTorso,ArmF,ArmB";
-            var channelBBinding = _channelBBindingProvider != null ? _channelBBindingProvider() : "LegF,LegB";
+            var channelABinding = _channelABindingProvider != null ? _channelABindingProvider() : "Head,UpTorso,DownTorso,LeftArm,RightArm";
+            var channelBBinding = _channelBBindingProvider != null ? _channelBBindingProvider() : "LeftLeg,RightLeg";
             if (body.limbs != null)
             {
                 for (var i = 0; i < body.limbs.Length; i++)
@@ -179,16 +184,16 @@ namespace DGLab.BepInEx
                     var injury = Mathf.Clamp01(Mathf.Max(100f - skinHealth, 100f - muscleHealth) / 100f);
                     var bleed = Mathf.Clamp01(limb.totalBleedAmount / 25f);
                     var infection = Mathf.Clamp01(ValidPercent(limb.infectionAmount, 0f) / 100f);
-                    var fracture = limb.broken ? 0.55f : 0f;
-                    var dislocation = limb.dislocated ? 0.5f : 0f;
+                    var fracture = limb.broken ? 0.68f : 0f;
+                    var dislocation = limb.dislocated ? 0.62f : 0f;
                     var structural = Mathf.Max(fracture, dislocation);
                     var nerve = (limb.strokeAffected && body.strokeAmount > 20f) || (muscleHealth > 0f && muscleHealth <= Limb.muscleDeathThreshold && pain > 0.2f) ? 0.55f : 0f;
                     var chronicInjury = Mathf.Clamp01(injury * 0.08f);
                     var limbSeverity = WeightedMax(
-                        pain * 0.95f,
-                        bleed * 0.78f,
+                        pain * 0.9f,
+                        bleed * 0.7f,
                         infection * 0.35f,
-                        structural * Mathf.Max(0.25f, pain),
+                        structural * Mathf.Max(0.45f, pain),
                         nerve * Mathf.Max(0.2f, pain),
                         chronicInjury);
 
@@ -232,8 +237,8 @@ namespace DGLab.BepInEx
             var totalPain = ValidPercent(body.averagePain, 0f);
             var painCap = PainOutputCap(totalPain);
             var painSeverity = painCap;
-            var shockSeverity = ValidPercent(body.shock, 0f) / 55f;
-            var painShockSeverity = Mathf.Clamp01(body.painShock) / 0.3f;
+            var rawShockSeverity = Mathf.Clamp01(Mathf.Pow(Mathf.Clamp01(ValidPercent(body.shock, 0f) / 70f), 1.18f));
+            var rawPainShockSeverity = Mathf.Clamp01(Mathf.Pow(Mathf.Clamp01(body.painShock / 0.45f), 1.2f));
             var traumaSeverity = ThresholdSeverityHigh(ValidPercent(body.traumaAmount, 0f), 25f, 45f, 80f, 100f);
             var nerveSeverity = WeightedMax(
                 ThresholdSeverityLow(consciousness, 90f, 72f, 55f, 30f),
@@ -273,8 +278,11 @@ namespace DGLab.BepInEx
             var cardiacArrestSeverity = body.inCardiacArrest ? 1f : 0f;
             var immunitySeverity = (50f - ValidPercent(body.immunity, 100f)) / 50f;
             var mitigation = ComputePositiveMitigation(body);
+            var shockEvidence = WeightedMax(painCap, traumaSeverity, bleedingSeverity, bloodVolumeSeverity, oxygenSeverity, internalBleedingSeverity, cardiacArrestSeverity, nerveSeverity * 0.55f);
+            var shockSeverity = GateShockByInjuryEvidence(rawShockSeverity, shockEvidence);
+            var painShockSeverity = GateShockByInjuryEvidence(rawPainShockSeverity, WeightedMax(painCap, traumaSeverity, bleedingSeverity, cardiacArrestSeverity));
 
-            Add("pain", painSeverity, SelectPainWave(painSeverity), 0.12f);
+            Add(PainConditionKey(painSeverity), painSeverity, SelectPainWave(painSeverity), 0.12f);
             Add("injury", Mathf.Max(maxLimbInjury / 100f, brokenOrDislocated), brokenOrDislocated > 0f ? DGLabWaveLibrary.FractureThrob : DGLabWaveLibrary.InjuryAche, 0.25f);
             Add("bleeding", bleedingSeverity, DGLabWaveLibrary.BleedingDrain, 0.12f);
             Add("blood-loss", bloodVolumeSeverity, DGLabWaveLibrary.BleedingDrain, 0.12f);
@@ -303,15 +311,15 @@ namespace DGLab.BepInEx
 
             var criticalSeverity = WeightedMax(shockSeverity, painShockSeverity, nerveSeverity, circulationSeverity, oxygenSeverity);
             var systemic = WeightedMax(
-                shockSeverity * 1.35f,
-                painShockSeverity * 1.2f,
-                traumaSeverity * 1.05f,
-                nerveSeverity * 1.25f,
-                circulationSeverity * 1.18f,
-                oxygenSeverity * 1.2f,
-                infectionSeverity * 0.75f,
-                temperatureSeverity * 0.75f,
-                panicSeverity * 0.45f,
+                shockSeverity * 1.08f,
+                painShockSeverity * 1.02f,
+                traumaSeverity * 0.9f,
+                nerveSeverity * 1.02f,
+                circulationSeverity * 0.95f,
+                oxygenSeverity * 1.0f,
+                infectionSeverity * 0.62f,
+                temperatureSeverity * 0.6f,
+                panicSeverity * 0.35f,
                 criticalSeverity > 0.82f ? 1f : 0f);
 
             _sustainedRatioA = ComputeRuntimeRatio(systemic, channelARegionalSeverity, painCap, mitigation, criticalSeverity);
@@ -351,6 +359,11 @@ namespace DGLab.BepInEx
                 BuildBodySnapshot(body));
         }
 
+        private bool IsChannelEnabled(int channel)
+        {
+            return _channelEnabledProvider == null || _channelEnabledProvider(channel);
+        }
+
         private void Add(string key, float severity, string[] wave, float threshold)
         {
             severity = Mathf.Clamp01(severity);
@@ -371,16 +384,17 @@ namespace DGLab.BepInEx
         private static void AddRegionalLayers(List<ConditionLayer> target, float pain, float injury, float bleed, float infection, float fracture, float dislocation, float nerve)
         {
             if (target == null) return;
-            AddTo(target, "pain", pain * 0.95f, SelectPainWave(pain * 0.95f), 0.12f);
-            AddTo(target, "injury", injury, DGLabWaveLibrary.InjuryAche, 0.18f);
-            AddTo(target, "injury", fracture, DGLabWaveLibrary.FractureThrob, 0.18f);
-            AddTo(target, "injury", dislocation, DGLabWaveLibrary.JointPulse, 0.18f);
-            AddTo(target, "bleeding", bleed, DGLabWaveLibrary.BleedingDrain, 0.12f);
-            AddTo(target, "infection", infection, DGLabWaveLibrary.InfectionCrawl, 0.14f);
-            AddTo(target, "nerve", nerve, DGLabWaveLibrary.ShockSpike, 0.1f);
+            var regionalPain = pain * 0.95f;
+            AddTo(target, PainConditionKey(regionalPain), regionalPain, SelectPainWave(regionalPain), 0.12f, true);
+            AddTo(target, "fracture", fracture * 1.35f, DGLabWaveLibrary.FractureThrob, 0.16f, true);
+            AddTo(target, "dislocation", dislocation * 1.25f, DGLabWaveLibrary.JointPulse, 0.16f, true);
+            AddTo(target, "injury", injury * 0.78f, DGLabWaveLibrary.InjuryAche, 0.2f, true);
+            AddTo(target, "bleeding", bleed * 0.92f, DGLabWaveLibrary.BleedingDrain, 0.12f, true);
+            AddTo(target, "infection", infection * 0.9f, DGLabWaveLibrary.InfectionCrawl, 0.14f, true);
+            AddTo(target, "nerve", nerve * 0.9f, DGLabWaveLibrary.ShockSpike, 0.1f, true);
         }
 
-        private static void AddTo(List<ConditionLayer> target, string key, float severity, string[] wave, float threshold)
+        private static void AddTo(List<ConditionLayer> target, string key, float severity, string[] wave, float threshold, bool regional = false)
         {
             severity = Mathf.Clamp01(severity);
             if (severity < threshold) return;
@@ -391,25 +405,54 @@ namespace DGLab.BepInEx
                 {
                     target[i].Severity = severity;
                     target[i].Wave = wave;
+                    target[i].Regional = target[i].Regional || regional;
                 }
                 return;
             }
-            target.Add(new ConditionLayer { Key = key, Severity = severity, Wave = wave });
+            target.Add(new ConditionLayer { Key = key, Severity = severity, Wave = wave, Regional = regional });
         }
 
-        private static ConditionLayer[] BuildChannelWaveLayers(List<ConditionLayer> regionalLayers, ConditionLayer[] systemicLayers)
+        private static ConditionLayer CloneLayer(ConditionLayer source, float severity)
         {
-            var selected = new List<ConditionLayer>();
-            if (regionalLayers != null) selected.AddRange(regionalLayers.OrderByDescending(layer => layer.Severity));
+            return new ConditionLayer { Key = source.Key, Wave = source.Wave, Severity = Mathf.Clamp01(severity), Regional = source.Regional };
+        }
+
+        private static ConditionLayer[] BuildChannelWaveLayers(int channel, List<ConditionLayer> regionalLayers, ConditionLayer[] systemicLayers)
+        {
+            var selected = new List<ConditionLayer>(4);
+            var regional = regionalLayers != null ? regionalLayers.OrderByDescending(layer => layer.Severity).ToArray() : new ConditionLayer[0];
+            var topRegional = regional.Length > 0 ? regional[0].Severity : 0f;
+
+            for (var i = 0; i < regional.Length && selected.Count < 3; i++)
+            {
+                if (ContainsLayer(selected, regional[i].Key)) continue;
+                selected.Add(CloneLayer(regional[i], regional[i].Severity * 1.05f));
+            }
+
+            var systemicMinSeverity = Mathf.Lerp(0.14f, 0.34f, Mathf.Clamp01(topRegional));
+            var systemicBudget = topRegional >= 0.75f ? 1 : (topRegional >= 0.45f ? 2 : 3);
+            var shared = new List<ConditionLayer>();
             if (systemicLayers != null)
             {
-                for (var i = 0; i < systemicLayers.Length && selected.Count < 4; i++)
+                for (var i = 0; i < systemicLayers.Length; i++)
                 {
                     if (!IsSharedLayer(systemicLayers[i].Key)) continue;
+                    if (systemicLayers[i].Severity < systemicMinSeverity) continue;
                     if (ContainsLayer(selected, systemicLayers[i].Key)) continue;
-                    selected.Add(systemicLayers[i]);
+                    shared.Add(systemicLayers[i]);
                 }
             }
+
+            if (channel == 2) shared = shared.OrderBy(layer => layer.Severity).ToList();
+            else shared = shared.OrderByDescending(layer => layer.Severity).ToList();
+
+            var systemicScale = Mathf.Lerp(0.62f, 0.36f, Mathf.Clamp01(topRegional));
+            for (var i = 0; i < shared.Count && selected.Count < 4 && systemicBudget > 0; i++)
+            {
+                selected.Add(CloneLayer(shared[i], shared[i].Severity * systemicScale));
+                systemicBudget--;
+            }
+
             return selected.OrderByDescending(layer => layer.Severity).Take(4).ToArray();
         }
 
@@ -439,10 +482,20 @@ namespace DGLab.BepInEx
                 case "mood":
                 case "panic":
                 case "low-immunity":
+                case "pain1":
+                case "pain2":
+                case "pain3":
                     return true;
                 default:
                     return false;
             }
+        }
+
+        private static string PainConditionKey(float severity)
+        {
+            if (severity >= 0.62f) return "pain3";
+            if (severity >= 0.32f) return "pain2";
+            return "pain1";
         }
 
         private static bool ContainsLayer(List<ConditionLayer> layers, string key)
@@ -462,12 +515,32 @@ namespace DGLab.BepInEx
         private static float ComputeRuntimeRatio(float systemic, float regional, float painCap, float mitigation, float criticalSeverity)
         {
             var regionalCap = Mathf.Max(painCap, criticalSeverity >= 0.75f ? 1f : 0f);
-            var cappedRegional = Mathf.Min(regional * 0.95f, regionalCap);
+            var cappedRegional = Mathf.Min(ShapeRuntimeSeverity(regional) * 0.92f, regionalCap);
+            systemic = ShapeRuntimeSeverity(systemic);
             var severity = WeightedMax(systemic, cappedRegional);
             var mitigationScale = criticalSeverity >= 0.9f ? 1f : (severity >= 0.9f ? 1f - mitigation * 0.2f : 1f - mitigation);
             severity = Mathf.Clamp01(severity * mitigationScale);
-            if (severity < 0.12f) return 0f;
+            if (severity < 0.08f) return 0f;
             return Mathf.Clamp01(severity);
+        }
+
+        private static float GateShockByInjuryEvidence(float shock, float evidence)
+        {
+            shock = Mathf.Clamp01(shock);
+            evidence = Mathf.Clamp01(evidence);
+            if (shock <= 0f) return 0f;
+            if (evidence >= 0.28f) return shock;
+            if (evidence >= 0.12f) return Mathf.Min(shock, Mathf.Lerp(0.08f, 0.28f, Mathf.InverseLerp(0.12f, 0.28f, evidence)));
+            return 0f;
+        }
+
+        private static float ShapeRuntimeSeverity(float severity)
+        {
+            severity = Mathf.Clamp01(severity);
+            if (severity <= 0f) return 0f;
+            if (severity < 0.18f) return Mathf.Lerp(0.06f, 0.18f, Mathf.InverseLerp(0.01f, 0.18f, severity));
+            if (severity < 0.72f) return Mathf.Lerp(0.18f, 0.68f, Mathf.InverseLerp(0.18f, 0.72f, severity));
+            return Mathf.Lerp(0.68f, 1f, Mathf.InverseLerp(0.72f, 1f, severity));
         }
 
         private static string[] SelectPainWave(float severity)
@@ -599,18 +672,18 @@ namespace DGLab.BepInEx
                 case 0: return "Head";
                 case 1: return "UpTorso";
                 case 2: return "DownTorso";
-                case 3: return "ArmFUpper";
-                case 4: return "ArmFLower";
-                case 5: return "HandF";
-                case 6: return "ArmBUpper";
-                case 7: return "ArmBLower";
-                case 8: return "HandB";
-                case 9: return "LegFUpper";
-                case 10: return "LegFLower";
-                case 11: return "FootF";
-                case 12: return "LegBUpper";
-                case 13: return "LegBLower";
-                case 14: return "FootB";
+                case 3: return "LeftUpperArm";
+                case 4: return "LeftForearm";
+                case 5: return "LeftHand";
+                case 6: return "RightUpperArm";
+                case 7: return "RightForearm";
+                case 8: return "RightHand";
+                case 9: return "LeftThigh";
+                case 10: return "LeftLowerLeg";
+                case 11: return "LeftFoot";
+                case 12: return "RightThigh";
+                case 13: return "RightLowerLeg";
+                case 14: return "RightFoot";
                 default: return "Limb" + index;
             }
         }

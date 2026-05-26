@@ -103,7 +103,32 @@ namespace DGLab.BepInEx
         public void InvalidateAddressCache()
         {
             _cachedEmbeddedAdvertiseAddress = null;
+            _cachedCandidates = null;
         }
+
+        public void SetAdvertiseAddressOverride(string address)
+        {
+            _cachedEmbeddedAdvertiseAddress = address;
+            _cachedCandidates = null;
+        }
+
+        public List<string> GetAdvertiseAddressList()
+        {
+            if (_cachedCandidates != null) return _cachedCandidates;
+            var result = new List<string>();
+            try
+            {
+                var candidates = GetAdvertiseAddressCandidates();
+                candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
+                foreach (var c in candidates)
+                    if (c.Score > -50) result.Add(c.Address.ToString());
+            }
+            catch { }
+            _cachedCandidates = result;
+            return result;
+        }
+
+        private List<string> _cachedCandidates;
 
         private string GetEmbeddedAdvertiseAddress()
         {

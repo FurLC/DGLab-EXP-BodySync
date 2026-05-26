@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace DGLab.BepInEx
@@ -41,6 +43,74 @@ namespace DGLab.BepInEx
             }
 
             return false;
+        }
+
+        public static bool BindingContainsToken(string binding, string token)
+        {
+            var tokenIndices = ExpandLimbIndices(token);
+            if (tokenIndices.Length == 0) return false;
+            return tokenIndices.All(index => IsLimbBound(binding, index));
+        }
+
+        public static string ToggleBindingToken(string binding, string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return string.IsNullOrWhiteSpace(binding) ? string.Empty : binding.Trim();
+
+            var tokenIndices = ExpandLimbIndices(token);
+            if (tokenIndices.Length == 0) return string.IsNullOrWhiteSpace(binding) ? string.Empty : binding.Trim();
+
+            var selected = new SortedSet<int>();
+            if (!string.IsNullOrWhiteSpace(binding))
+            {
+                var existing = binding.Split(new[] { ',', ';', '|', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in existing)
+                {
+                    foreach (var index in ExpandLimbIndices(part.Trim())) selected.Add(index);
+                }
+            }
+
+            var alreadySelected = tokenIndices.All(index => selected.Contains(index));
+            foreach (var index in tokenIndices)
+            {
+                if (alreadySelected) selected.Remove(index);
+                else selected.Add(index);
+            }
+
+            return FormatBinding(selected);
+        }
+
+        private static string FormatBinding(IEnumerable<int> indices)
+        {
+            var tokens = new List<string>();
+            foreach (var index in indices)
+            {
+                var token = TokenForIndex(index);
+                if (!string.IsNullOrEmpty(token)) tokens.Add(token);
+            }
+            return string.Join(",", tokens.ToArray());
+        }
+
+        private static string TokenForIndex(int index)
+        {
+            switch (index)
+            {
+                case 0: return "Head";
+                case 1: return "UpTorso";
+                case 2: return "DownTorso";
+                case 3: return "LeftUpperArm";
+                case 4: return "LeftForearm";
+                case 5: return "LeftHand";
+                case 6: return "RightUpperArm";
+                case 7: return "RightForearm";
+                case 8: return "RightHand";
+                case 9: return "LeftThigh";
+                case 10: return "LeftLowerLeg";
+                case 11: return "LeftFoot";
+                case 12: return "RightThigh";
+                case 13: return "RightLowerLeg";
+                case 14: return "RightFoot";
+                default: return null;
+            }
         }
 
         private static int[] ExpandLimbIndices(string value)
@@ -87,20 +157,12 @@ namespace DGLab.BepInEx
                 case "股":
                 case "腹":
                 case "腹部": indices = new[] { 2 }; return true;
-                case "armf":
-                case "frontarm":
                 case "leftarm":
                 case "左臂": indices = new[] { 3, 4, 5 }; return true;
-                case "armb":
-                case "backarm":
                 case "rightarm":
                 case "右臂": indices = new[] { 6, 7, 8 }; return true;
-                case "legf":
-                case "frontleg":
                 case "leftleg":
                 case "左腿": indices = new[] { 9, 10, 11 }; return true;
-                case "legb":
-                case "backleg":
                 case "rightleg":
                 case "右腿": indices = new[] { 12, 13, 14 }; return true;
                 default: return false;
@@ -131,56 +193,32 @@ namespace DGLab.BepInEx
                 case "股":
                 case "腹":
                 case "腹部": index = 2; return true;
-                case "armfupper":
-                case "frontupperarm":
                 case "leftupperarm":
                 case "左上臂": index = 3; return true;
-                case "armflower":
-                case "frontforearm":
                 case "leftforearm":
                 case "左前臂": index = 4; return true;
-                case "handf":
-                case "fronthand":
                 case "lefthand":
                 case "左手": index = 5; return true;
-                case "armbupper":
-                case "backupperarm":
                 case "rightupperarm":
                 case "右上臂": index = 6; return true;
-                case "armblower":
-                case "backforearm":
                 case "rightforearm":
                 case "右前臂": index = 7; return true;
-                case "handb":
-                case "backhand":
                 case "righthand":
                 case "右手": index = 8; return true;
-                case "legfupper":
-                case "frontthigh":
                 case "leftthigh":
                 case "左大腿": index = 9; return true;
-                case "legflower":
-                case "frontshin":
-                case "frontcalf":
                 case "leftshin":
                 case "leftcalf":
+                case "leftlowerleg":
                 case "左小腿": index = 10; return true;
-                case "footf":
-                case "frontfoot":
                 case "leftfoot":
                 case "左脚": index = 11; return true;
-                case "legbupper":
-                case "backthigh":
                 case "rightthigh":
                 case "右大腿": index = 12; return true;
-                case "legblower":
-                case "backshin":
-                case "backcalf":
                 case "rightshin":
                 case "rightcalf":
+                case "rightlowerleg":
                 case "右小腿": index = 13; return true;
-                case "footb":
-                case "backfoot":
                 case "rightfoot":
                 case "右脚": index = 14; return true;
                 default: return false;

@@ -23,6 +23,7 @@ namespace DGLab.BepInEx.Network
         private TcpClient _appClient;
         private NetworkStream _appStream;
         private string _targetId = string.Empty;
+        private bool _bound;
 
         public event Action<string> OnRawMessage;
         public event Action<DGLabMessage> OnMessage;
@@ -31,7 +32,7 @@ namespace DGLab.BepInEx.Network
         public event Action<Exception> OnError;
 
         public string ClientId => _terminalId;
-        public string TargetId => _targetId;
+        public string TargetId => _bound ? _targetId : string.Empty;
 
         public DGLabEmbeddedWebSocketServer(string bindAddress, int port, string terminalId)
         {
@@ -155,7 +156,19 @@ namespace DGLab.BepInEx.Network
                 _appClient = client;
                 _appStream = stream;
                 _targetId = string.Empty;
+                _bound = false;
             }
+
+            // Per official protocol: server must assign a targetId to the APP immediately after connection
+            var appId = Guid.NewGuid().ToString("D");
+            lock (_sync) { _targetId = appId; }
+            Send(new DGLabMessage
+            {
+                type = "bind",
+                clientId = appId,
+                targetId = string.Empty,
+                message = "targetId"
+            });
         }
 
         private void CloseAppConnection(bool notify)
@@ -167,6 +180,7 @@ namespace DGLab.BepInEx.Network
                 _appStream = null;
                 _appClient = null;
                 _targetId = string.Empty;
+                _bound = false;
             }
             if (notify) OnClosed?.Invoke("app disconnected");
         }
@@ -293,13 +307,15 @@ namespace DGLab.BepInEx.Network
 
         private void HandleBindMessage(DGLabMessage msg)
         {
-            var appId = ResolveAppTargetId(msg);
+            // APP sends: clientId=terminal ID from QR, targetId=APP ID assigned by this server, message="DGLAB"
+            string appId;
+            lock (_sync) { appId = _targetId; }
             if (string.IsNullOrEmpty(appId)) return;
 
-            lock (_sync)
-            {
-                _targetId = appId;
-            }
+            if (!StringEquals(msg.clientId, ClientId)) return;
+            if (!string.IsNullOrWhiteSpace(msg.targetId) && !StringEquals(msg.targetId, appId)) return;
+
+            lock (_sync) { _targetId = appId; _bound = true; }
 
             Send(new DGLabMessage
             {
@@ -313,11 +329,9 @@ namespace DGLab.BepInEx.Network
         private bool IsBindMessage(DGLabMessage msg)
         {
             if (!StringEquals(msg.type, "bind")) return false;
-            if (string.IsNullOrWhiteSpace(msg.message)) return true;
-            return StringEquals(msg.message, "DGLAB") ||
-                   StringEquals(msg.message, "bind") ||
-                   StringEquals(msg.message, "targetId") ||
-                   StringEquals(msg.message, ClientId);
+            // Ignore our own "targetId" assignment message echoed back
+            if (StringEquals(msg.message, "targetId")) return false;
+            return true;
         }
 
         private static bool IsPingMessage(DGLabMessage msg)
