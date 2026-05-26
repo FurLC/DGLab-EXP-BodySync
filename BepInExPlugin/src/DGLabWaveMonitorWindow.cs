@@ -537,7 +537,7 @@ namespace DGLab.BepInEx
                 new WavePreviewEntry(_owner.T("Fatigue", "疲劳"), DGLabWaveLibrary.FatiguePulse),
                 new WavePreviewEntry(_owner.T("Severe fatigue", "严重疲倦"), DGLabWaveLibrary.SevereFatigueDrag),
 
-                new WavePreviewEntry(_owner.T("Dizziness", "晕眩"), DGLabWaveLibrary.DizzinessNerve),
+                new WavePreviewEntry(_owner.T("Dizziness", "晕眩迷糊"), DGLabWaveLibrary.DizzinessNerve),
                 new WavePreviewEntry(_owner.T("Confusion", "意识混乱"), DGLabWaveLibrary.ConfusionDrift),
                 new WavePreviewEntry(_owner.T("Brain injury", "脑损伤"), DGLabWaveLibrary.BrainInjuryJolt),
                 new WavePreviewEntry(_owner.T("Stroke", "中风"), DGLabWaveLibrary.FibrillationChaos),

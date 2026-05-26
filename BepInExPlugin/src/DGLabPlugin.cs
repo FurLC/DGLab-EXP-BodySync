@@ -971,6 +971,9 @@ namespace DGLab.BepInEx
                 case "pain2": return T("Pain", "疼痛");
                 case "pain3": return T("Severe pain", "剧烈疼痛");
                 case "pain4": return T("Agonizing pain", "剧痛难忍");
+                case "confused1": return T("Dizziness", "困惑");
+                case "confused2": return T("Confusion", "非常困惑");
+                case "confused3": return T("Near unconscious", "昏厥");
                 case "injury": return T("Injury", "损伤");
                 case "fracture": return T("Fracture", "骨折");
                 case "dislocation": return T("Dislocation", "脱臼");
