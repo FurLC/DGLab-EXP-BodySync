@@ -333,6 +333,12 @@ namespace DGLab.BepInEx
                 return;
             }
 
+            if (body.sleeping)
+            {
+                ClearOutputForInactiveBody("sleep");
+                return;
+            }
+
             _outputClearedForNoBody = false;
             _lastInactiveReason = string.Empty;
             _strengthEnvelope?.Tick();
@@ -1580,7 +1586,7 @@ namespace DGLab.BepInEx
             var lowerPainRise = lowerPain - _lastObservedLowerPain;
             var consciousnessDrop = _lastObservedConsciousness - body.consciousness;
 
-            if (body.shock >= 20f && shockRise > 5f && HasInjuryEvidenceForShock(body, upperPainRise, lowerPainRise))
+            if (!body.sleeping && body.shock >= 20f && shockRise > 5f && HasInjuryEvidenceForShock(body, upperPainRise, lowerPainRise))
             {
                 DamageHooks.TriggerBodyStateSpike("body-shock", ScaleCriticalSeverity(body.shock / 55f));
             }
@@ -1598,7 +1604,7 @@ namespace DGLab.BepInEx
                 _strengthEnvelope?.TriggerSpike(2, ScaleBodySeverity(lowerPain / 85f), "lower-pain");
                 _waveRouter?.TriggerEvent("damage", 2);
             }
-            if (consciousnessDrop > 20f)
+            if (!body.sleeping && consciousnessDrop > 20f)
             {
                 DamageHooks.TriggerBodyStateSpike("body-consciousness", ScaleCriticalSeverity(consciousnessDrop / 75f));
             }
