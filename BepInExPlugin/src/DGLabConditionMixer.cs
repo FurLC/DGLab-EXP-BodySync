@@ -271,6 +271,7 @@ namespace DGLab.BepInEx
             }
             var traumaSeverity = ThresholdSeverityHigh(ValidPercent(body.traumaAmount, 0f), 25f, 45f, 80f, 100f);
             var nerveSeverity = WeightedMax(
+                ThresholdSeverityLow(consciousness, 90f, 72f, 55f, 30f),
                 ThresholdSeverityLow(brainHealth, 75f, 50f, 25f, 5f),
                 ThresholdSeverityHigh(ValidPercent(body.strokeAmount, 0f), 20f, 35f, 50f, 70f));
             var hypotensionSeverity = body.inCardiacArrest ? 1f : ThresholdSeverityLow(bloodPressure, 110f, 96f, 83f, 60f);
@@ -313,8 +314,8 @@ namespace DGLab.BepInEx
             var immunitySeverity = (50f - ValidPercent(body.immunity, 100f)) / 50f;
             var mitigation = ComputePositiveMitigation(body);
             var shockEvidence = WeightedMax(painCap, traumaSeverity, bleedingSeverity, bloodVolumeSeverity, oxygenSeverity, internalBleedingSeverity, cardiacArrestSeverity, nerveSeverity * 0.55f);
-            var shockSeverity = 0f;
-            var painShockSeverity = 0f;
+            var shockSeverity = GateShockByInjuryEvidence(rawShockSeverity, shockEvidence);
+            var painShockSeverity = GateShockByInjuryEvidence(rawPainShockSeverity, WeightedMax(painCap, traumaSeverity, bleedingSeverity, cardiacArrestSeverity));
 
             Add(PainConditionKey(painSeverity), painSeverity, SelectPainWave(painSeverity), 0.12f);
             Add("injury", Mathf.Max(maxLimbInjury / 100f, brokenOrDislocated), brokenOrDislocated > 0f ? DGLabWaveLibrary.FractureThrob : DGLabWaveLibrary.InjuryAche, 0.25f);
@@ -335,15 +336,15 @@ namespace DGLab.BepInEx
             Add("exertion", exertionSeverity, SelectFatigueWave(exertionSeverity), 0.2f);
             Add("tired", tiredSeverity, SelectFatigueWave(tiredSeverity), 0.2f);
             Add("panic", panicSeverity, DGLabWaveLibrary.PanicHeartbeat, 0.12f);
-            var nerveKey = NerveConditionKey(brainHealth, body.strokeAmount);
-            if (!string.IsNullOrEmpty(nerveKey))
-            {
-                Add(nerveKey, nerveSeverity, SelectNerveWave(brainHealth, body.strokeAmount), 0.1f);
-            }
+            Add(NerveConditionKey(consciousness, brainHealth, body.strokeAmount), nerveSeverity, SelectNerveWave(consciousness, brainHealth, body.strokeAmount, nerveSeverity), 0.1f);
             Add("trauma", traumaSeverity, DGLabWaveLibrary.TraumaFlashback, 0.08f);
+            Add("pain-shock", painShockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f);
+            Add("shock", shockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f);
 
-            var criticalSeverity = WeightedMax(nerveSeverity, circulationSeverity, oxygenSeverity);
+            var criticalSeverity = WeightedMax(shockSeverity, painShockSeverity, nerveSeverity, circulationSeverity, oxygenSeverity);
             var systemic = WeightedMax(
+                shockSeverity * 1.08f,
+                painShockSeverity * 1.02f,
                 traumaSeverity * 0.9f,
                 nerveSeverity * 1.02f,
                 circulationSeverity * 0.95f,
@@ -558,14 +559,16 @@ namespace DGLab.BepInEx
             return "sepsis1";
         }
 
-        private static string NerveConditionKey(float brainHealth, float strokeAmount)
+        private static string NerveConditionKey(float consciousness, float brainHealth, float strokeAmount)
         {
             if (strokeAmount > 70f) return "stroke";
             if (brainHealth < 30f) return "braindamage4";
             if (brainHealth < 60f) return "braindamage3";
             if (brainHealth < 80f) return "braindamage2";
             if (brainHealth < 95f) return "braindamage1";
-            return null;
+            if (consciousness < 55f) return "confused3";
+            if (consciousness < 72f) return "confused2";
+            return "confused1";
         }
 
         private static string HypotensionConditionKey(float bloodPressure, bool cardiacArrest)
@@ -656,10 +659,12 @@ namespace DGLab.BepInEx
             return severity >= 0.55f ? DGLabWaveLibrary.SevereFatigueDrag : DGLabWaveLibrary.FatiguePulse;
         }
 
-        private static string[] SelectNerveWave(float brainHealth, float strokeAmount)
+        private static string[] SelectNerveWave(float consciousness, float brainHealth, float strokeAmount, float severity)
         {
             if (strokeAmount > 70f) return DGLabWaveLibrary.FibrillationChaos;
             if (brainHealth < 95f) return DGLabWaveLibrary.BrainInjuryJolt;
+            if (consciousness < 55f) return DGLabWaveLibrary.SevereHypotensionFade;
+            if (consciousness < 72f) return DGLabWaveLibrary.ConfusionDrift;
             return DGLabWaveLibrary.DizzinessNerve;
         }
 
