@@ -13,6 +13,8 @@
 - 支持外部 Socket 后端，适合已有控制器或自定义网络环境。
 - 支持 A/B 双通道强度上限、身体部位绑定和局部伤害路由。
 - 持续读取疼痛、损伤、骨折、脱臼、出血、感染、休克、缺氧、体温、意识等状态。
+- 可对每个持续状态单独启用/禁用，并调节强度倍率。
+- UI 语言列表和身体状态名称会跟随游戏语言文件 `CasualtiesUnknown_Data\Lang`。
 - 提供游戏内菜单、连接二维码、状态悬浮窗、波形监视器和调试显示。
 - 未连接设备时也可查看状态与波形，方便先检查配置。
 
@@ -68,21 +70,29 @@ B 通道：DownTorso,LeftLeg,RightLeg
 1. 启动游戏，按 `F10` 打开 DG-Lab 菜单。
 2. 确认使用内置后端，或确认外部 Socket 后端可连接。
 3. 确保运行游戏的电脑和手机在同一局域网。
-4. 在菜单中选择正确的局域网地址并刷新二维码。
-5. 使用 DG-Lab App 扫码连接。
-6. 将 A/B 强度上限调到安全低值。
-7. 设置 A/B 通道身体部位绑定。
-8. 打开状态悬浮窗和波形监视器，确认连接、强度和当前输出。
+4. 使用 DG-Lab App 扫描生成的二维码。
+5. 将 A/B 强度上限调到安全低值。
+6. 设置 A/B 通道身体部位绑定，并按需要调整状态采样配置。
+7. 打开状态悬浮窗和波形监视器，确认连接、强度和当前输出。
 
 ## 游戏内菜单
 
 默认主菜单快捷键为 `F10`。菜单包含：
 
 - 设备连接状态与 Socket 后端切换/重启。
-- 二维码生成、刷新和局域网地址选择。
+- 二维码生成和刷新。内置后端会自动选择二维码里使用的局域网地址。
 - A/B 通道最大强度。
 - A/B 通道身体部位绑定。
+- 每个持续身体状态的采样开关和强度倍率。
 - 状态悬浮窗、波形监视器和调试显示开关。
+
+三个输出相关开关的职责是分开的：
+
+| 开关 | 作用 |
+| --- | --- |
+| `受伤时有反应` | 控制瞬时受伤触发，例如受击、冲击、骨折、脱臼、断肢、自伤。 |
+| `事件脉冲` | 控制瞬时或特殊事件的短波形脉冲。关闭后实时强度变化仍可工作。 |
+| `持续身体状态` | 控制持续身体状态采样。关闭后会清除持续输出，但不会覆盖每个状态自己的配置。 |
 
 默认快捷键：
 
@@ -124,15 +134,48 @@ BepInEx 会自动生成配置文件，不需要手动放入插件目录。
 | `Network/OfficialSocketUrl` | 空 | 官方 Socket 后端地址 |
 | `Control/StrengthA` | `100` | A 通道运行时强度上限，范围 `0-200` |
 | `Control/StrengthB` | `100` | B 通道运行时强度上限，范围 `0-200` |
-| `Control/EnableDamageHook` | `true` | 启用伤害与身体状态 Hook |
-| `Wave/EnableWaveEvents` | `true` | 启用事件波形 |
-| `Wave/EnableConditionMixer` | `true` | 启用持续身体状态混波 |
+| `Control/EnableDamageHook` | `true` | 启用瞬时受伤反应，例如受击、冲击、骨折、脱臼、断肢、自伤 |
+| `Wave/EnableWaveEvents` | `true` | 启用瞬时或特殊事件的短波形脉冲 |
+| `Wave/EnableConditionMixer` | `true` | 启用持续身体状态采样和持续强度输出 |
+| `Wave/StopOutputWhenUnconscious` | `true` | 角色昏迷时清除输出 |
+| `Wave/UnconsciousRecoverySeconds` | `6` | 苏醒后恢复输出的回升秒数，范围 `0-30` |
 | `Binding/ChannelABodyParts` | `Head,UpTorso,DownTorso,LeftArm,RightArm` | A 通道绑定部位 |
 | `Binding/ChannelBBodyParts` | `LeftLeg,RightLeg` | B 通道绑定部位 |
 | `UI/MenuToggleKey` | `F10` | 主菜单快捷键 |
 | `UI/OutputMonitorToggleKey` | `RightBracket` | 状态悬浮窗快捷键 |
 | `UI/WaveViewerToggleKey` | `LeftBracket` | 波形监视器快捷键 |
-| `UI/Language` | `English` | UI 语言：`English` 或 `Chinese` |
+| `UI/Language` | `English` | UI 语言 ID。语言名称从 `<GameDir>\CasualtiesUnknown_Data\Lang\*.json` 读取 |
+
+已有配置文件会保留之前保存的值。如果某个默认值为 `true` 的开关在游戏里显示关闭，请检查生成的 `dglab.settings.cfg` 是否已经保存过关闭状态。
+
+## 状态采样配置
+
+`持续身体状态` 是运行时总开关，只负责暂停或恢复采样，不会重写每个状态自己的设置。
+
+主菜单中的 `状态采样配置` 可调整每个状态：
+
+- 是否采样该状态。
+- 该状态持续输出的强度倍率，范围 `0.00x` 到 `2.00x`。
+- 配置保存在 `dglab.settings.cfg` 的 `[Condition]` 段。
+
+示例：
+
+| 配置项 | 说明 |
+| --- | --- |
+| `Condition/PainEnabled` | 启用或禁用疼痛采样 |
+| `Condition/PainScale` | 疼痛输出倍率，范围 `0.0-2.0` |
+| `Condition/ShockEnabled` | 启用或禁用休克采样 |
+| `Condition/ShockScale` | 休克输出倍率，范围 `0.0-2.0` |
+
+## 语言文件
+
+语言选择器固定读取游戏语言目录：
+
+```text
+<GameDir>\CasualtiesUnknown_Data\Lang\*.json
+```
+
+菜单中显示每个语言文件顶层的 `name` 字段。状态悬浮窗和波形监视器里的身体状态名称会尽量跟随当前选择的游戏语言。
 
 ## 身体部位绑定
 
@@ -174,9 +217,9 @@ BepInEx 会自动生成配置文件，不需要手动放入插件目录。
 0.0.0.0:9999
 ```
 
-`0.0.0.0` 表示服务端接受所有网卡连接，但二维码里必须是手机可访问的具体地址，例如 `192.168.x.x`。如果电脑存在虚拟网卡、代理或 VPN，自动选择的地址可能不正确。
+`0.0.0.0` 表示服务端接受所有网卡连接，但二维码里必须是手机可访问的具体地址，例如 `192.168.x.x`。BodySync 会自动检测并写入最可能可访问的局域网地址。如果电脑存在虚拟网卡、代理或 VPN，自动选择的地址可能不正确。
 
-推荐在游戏内菜单中选择与手机同一局域网的地址，然后刷新二维码。仍无法连接时，手动修改：
+自动检测仍无法连接时，手动修改：
 
 ```text
 <GameDir>\BepInEx\config\dglab.socket.cfg
