@@ -19,6 +19,7 @@ namespace DGLab.BepInEx
         private static ConfigEntry<int> _dislocateIntensity;
         private static ConfigEntry<int> _dismemberIntensity;
         private static ConfigEntry<int> _selfHarmIntensity;
+        private static Func<bool> _enabledProvider;
         private static volatile DGLabWaveRouter _waveRouter;
         private static volatile DGLabOutputState _state;
         private static volatile DGLabStrengthEnvelope _strengthEnvelope;
@@ -58,6 +59,11 @@ namespace DGLab.BepInEx
             _lastTriggerByKey.Clear();
         }
 
+        public static void SetEnabledProvider(Func<bool> enabledProvider)
+        {
+            _enabledProvider = enabledProvider;
+        }
+
         public static void UpdateContext(
             DGLabClient client,
             DGLabWaveRouter waveRouter,
@@ -72,6 +78,7 @@ namespace DGLab.BepInEx
 
         internal static bool CanTrigger(string key, float cooldownSeconds)
         {
+            if (_enabledProvider != null && !_enabledProvider()) return false;
             var now = UnityEngine.Time.time;
             if (_lastTriggerByKey.TryGetValue(key, out var lastTime) && now - lastTime < cooldownSeconds)
             {

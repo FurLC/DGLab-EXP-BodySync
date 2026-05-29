@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using UnityEngine;
@@ -42,6 +44,8 @@ namespace DGLab.BepInEx
         private ConfigEntry<bool> _enableWaveEvents;
         private ConfigEntry<bool> _enableDeathState;
         private ConfigEntry<bool> _enableCriticalState;
+        private ConfigEntry<bool> _stopOutputWhenUnconscious;
+        private ConfigEntry<int> _unconsciousRecoverySeconds;
         private ConfigEntry<int> _deathWaveDuration;
         private ConfigEntry<int> _criticalWaveDuration;
         private ConfigEntry<int> _damageWaveDuration;
@@ -70,6 +74,9 @@ namespace DGLab.BepInEx
         private ConfigEntry<string> _channelABodyParts;
         private ConfigEntry<string> _channelBBodyParts;
         private ConfigEntry<bool> _enableConditionMixer;
+        private string[] _conditionKeys;
+        private Dictionary<string, ConfigEntry<bool>> _conditionEnabled;
+        private Dictionary<string, ConfigEntry<float>> _conditionScale;
         private ConfigEntry<bool> _debugLog;
         private ConfigEntry<bool> _realtimeTestLog;
         private ConfigEntry<float> _realtimeTestLogInterval;
@@ -112,7 +119,7 @@ namespace DGLab.BepInEx
             _strengthA = _advancedConfig.Bind("Control", "StrengthA", 100, Range(Text("Maximum runtime strength for channel A. Events scale up to this value.", "A 通道运行时强度上限。事件会按比例缩放到此值。"), 0, 200));
             _strengthB = _advancedConfig.Bind("Control", "StrengthB", 100, Range(Text("Maximum runtime strength for channel B. Events scale up to this value.", "B 通道运行时强度上限。事件会按比例缩放到此值。"), 0, 200));
             _enableHotkeys = _advancedConfig.Bind("Control", "EnableHotkeys", false, Text("Enable developer/demo hotkeys.", "启用开发/演示热键。"));
-            _enableDamageHook = _advancedConfig.Bind("Control", "EnableDamageHook", true, Text("Trigger DG-Lab output from game damage and body-state hooks.", "根据游戏伤害和身体状态 Hook 触发 DG-Lab 输出。"));
+            _enableDamageHook = _advancedConfig.Bind("Control", "EnableDamageHook", true, Text("React to instant injury events such as hits, impacts, fractures, dislocations, dismemberment, and self-harm.", "对瞬时受伤事件作出反应，例如受击、冲击、骨折、脱臼、断肢和自伤。"));
             _damageTriggerMin = _advancedConfig.Bind("Control", "DamageTriggerMin", 1.0f, Range(Text("Minimum damage value required to trigger output.", "触发输出所需的最小伤害值。"), 0f, 200f));
             _damageCooldown = _advancedConfig.Bind("Control", "DamageCooldownSeconds", 0.8f, Range(Text("Cooldown between damage triggers, in seconds.", "伤害触发之间的冷却时间，单位秒。"), 0f, 60f));
             _impactTriggerMin = _advancedConfig.Bind("Control", "ImpactTriggerMin", 8.0f, Range(Text("Minimum impact force required to trigger output.", "触发输出所需的最小冲击力。"), 0f, 500f));
@@ -147,9 +154,11 @@ namespace DGLab.BepInEx
 
         private void BindWaveConfig()
         {
-            _enableWaveEvents = _advancedConfig.Bind("Wave", "EnableWaveEvents", true, Text("Use waveform events in addition to runtime strength changes.", "除实时强度变化外，同时使用波形事件。"));
+            _enableWaveEvents = _advancedConfig.Bind("Wave", "EnableWaveEvents", true, Text("Send short waveform pulses for enabled instant or special events. Runtime strength changes still work without this.", "为启用的瞬时或特殊事件发送短波形脉冲。关闭后实时强度变化仍会工作。"));
             _enableDeathState = _advancedConfig.Bind("Wave", "EnableDeathState", true, Text("Enable persistent output when the character is dead.", "角色死亡时启用持续输出。"));
             _enableCriticalState = _advancedConfig.Bind("Wave", "EnableCriticalState", true, Text("Enable persistent output when the character is critically dying.", "角色濒死时启用持续输出。"));
+            _stopOutputWhenUnconscious = _advancedConfig.Bind("Wave", "StopOutputWhenUnconscious", true, Text("Stop all output when the character is unconscious (ECG screen).", "角色昏迷（心电图界面）时停止所有输出。"));
+            _unconsciousRecoverySeconds = _advancedConfig.Bind("Wave", "UnconsciousRecoverySeconds", 6, Duration(Text("Seconds to ramp output back after regaining consciousness.", "苏醒后恢复输出的缓慢回升秒数。")));
             _deathWaveDuration = _advancedConfig.Bind("Wave", "DeathWaveDuration", 2, Duration(Text("Wave duration for the death loop.", "死亡循环波形持续时间。")));
             _criticalWaveDuration = _advancedConfig.Bind("Wave", "CriticalWaveDuration", 2, Duration(Text("Wave duration for the critical loop.", "濒死循环波形持续时间。")));
             _damageWaveDuration = _advancedConfig.Bind("Wave", "DamageWaveDuration", 1, Duration(Text("Wave duration for damage events.", "伤害事件波形持续时间。")));
@@ -164,7 +173,187 @@ namespace DGLab.BepInEx
             _dislocateWaveCooldown = _advancedConfig.Bind("Wave", "DislocateWaveCooldown", 3, Cooldown(Text("Wave cooldown for dislocation events.", "脱臼事件波形冷却时间。")));
             _dismemberWaveCooldown = _advancedConfig.Bind("Wave", "DismemberWaveCooldown", 6, Cooldown(Text("Wave cooldown for dismember events.", "断肢事件波形冷却时间。")));
             _selfHarmWaveCooldown = _advancedConfig.Bind("Wave", "SelfHarmWaveCooldown", 6, Cooldown(Text("Wave cooldown for self-harm events.", "自伤事件波形冷却时间。")));
-            _enableConditionMixer = _advancedConfig.Bind("Wave", "EnableConditionMixer", true, Text("Sample ongoing body conditions and mix persistent waves for pain, sickness, infection, oxygen, hunger, thirst, temperature, fatigue, mood, and shock.", "采样持续身体状态，并为疼痛、疾病、感染、氧气、饥饿、口渴、温度、疲劳、情绪和休克混合持续波形。"));
+            _enableConditionMixer = _advancedConfig.Bind("Wave", "EnableConditionMixer", true, Text("Continuously sample the current body state and drive sustained strength from pain, shock, bleeding, oxygen, infection, temperature, fatigue, mood, and similar conditions.", "持续采样当前身体状态，并根据疼痛、休克、出血、缺氧、感染、体温、疲劳、情绪等状态驱动持续强度。"));
+            BindConditionConfig();
+        }
+
+        private void BindConditionConfig()
+        {
+            _conditionEnabled = new Dictionary<string, ConfigEntry<bool>>(StringComparer.OrdinalIgnoreCase);
+            _conditionScale = new Dictionary<string, ConfigEntry<float>>(StringComparer.OrdinalIgnoreCase);
+
+            _conditionKeys = new[]
+            {
+                "pain",
+                "injury",
+                "fracture",
+                "dislocation",
+                "bleeding",
+                "blood-loss",
+                "hypotension",
+                "hypertension",
+                "internal-bleeding",
+                "infection",
+                "sepsis",
+                "sickness",
+                "radiation",
+                "oxygen",
+                "arrhythmia",
+                "cardiac-arrest",
+                "hunger",
+                "thirst",
+                "temperature",
+                "exertion",
+                "tired",
+                "panic",
+                "nerve",
+                "trauma",
+                "pain-shock",
+                "shock"
+            };
+
+            for (var i = 0; i < _conditionKeys.Length; i++)
+            {
+                var key = _conditionKeys[i];
+                var labelEn = ConditionLabelEnglish(key);
+                var labelZh = ConditionLabelChinese(key);
+                var configKey = ConditionConfigKey(key);
+
+                _conditionEnabled[key] = _advancedConfig.Bind(
+                    "Condition",
+                    configKey + "Enabled",
+                    true,
+                    Text("Enable " + labelEn + " condition mixing.", "启用" + labelZh + "状态混合。"));
+                _conditionScale[key] = _advancedConfig.Bind(
+                    "Condition",
+                    configKey + "Scale",
+                    1.0f,
+                    Range(Text("Severity multiplier for " + labelEn + " condition output.", labelZh + "状态输出强度倍率。"), 0f, 2f));
+            }
+        }
+
+        private static string ConditionConfigKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return "Condition";
+            var parts = key.Split(new[] { '-' }, System.StringSplitOptions.RemoveEmptyEntries);
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var part = parts[i];
+                if (part.Length == 0) continue;
+                parts[i] = char.ToUpperInvariant(part[0]) + (part.Length > 1 ? part.Substring(1) : string.Empty);
+            }
+            return string.Join(string.Empty, parts);
+        }
+
+        private static string ConditionLabelEnglish(string key)
+        {
+            switch (key)
+            {
+                case "pain": return "pain";
+                case "injury": return "injury";
+                case "fracture": return "fracture";
+                case "dislocation": return "dislocation";
+                case "bleeding": return "bleeding";
+                case "blood-loss": return "blood loss";
+                case "hypotension": return "hypotension";
+                case "hypertension": return "hypertension";
+                case "internal-bleeding": return "internal bleeding";
+                case "infection": return "infection";
+                case "sepsis": return "sepsis";
+                case "sickness": return "sickness";
+                case "radiation": return "radiation sickness";
+                case "oxygen": return "oxygen deficit";
+                case "arrhythmia": return "arrhythmia";
+                case "cardiac-arrest": return "cardiac arrest";
+                case "hunger": return "hunger";
+                case "thirst": return "thirst";
+                case "temperature": return "temperature";
+                case "exertion": return "exertion";
+                case "tired": return "tired";
+                case "panic": return "panic";
+                case "nerve": return "neurological";
+                case "trauma": return "trauma";
+                case "pain-shock": return "pain shock";
+                case "shock": return "shock";
+                default: return key;
+            }
+        }
+
+        private static string ConditionLabelChinese(string key)
+        {
+            switch (key)
+            {
+                case "pain": return "疼痛";
+                case "injury": return "损伤";
+                case "fracture": return "骨折";
+                case "dislocation": return "脱臼";
+                case "bleeding": return "出血";
+                case "blood-loss": return "失血/低血容量";
+                case "hypotension": return "低血压";
+                case "hypertension": return "高血压";
+                case "internal-bleeding": return "内出血";
+                case "infection": return "感染";
+                case "sepsis": return "败血症";
+                case "sickness": return "疾病";
+                case "radiation": return "辐射病";
+                case "oxygen": return "缺氧";
+                case "arrhythmia": return "心律失常";
+                case "cardiac-arrest": return "心脏骤停";
+                case "hunger": return "饥饿";
+                case "thirst": return "口渴";
+                case "temperature": return "体温异常";
+                case "exertion": return "劳累";
+                case "tired": return "疲倦";
+                case "panic": return "恐惧";
+                case "nerve": return "神经功能";
+                case "trauma": return "创伤";
+                case "pain-shock": return "疼痛性休克";
+                case "shock": return "休克";
+                default: return key;
+            }
+        }
+
+        private bool IsConditionEnabled(string key)
+        {
+            if (_conditionEnabled == null || string.IsNullOrWhiteSpace(key)) return true;
+            return _conditionEnabled.TryGetValue(key, out var entry) ? entry.Value : true;
+        }
+
+        private float ConditionScale(string key)
+        {
+            if (_conditionScale == null || string.IsNullOrWhiteSpace(key)) return 1f;
+            return _conditionScale.TryGetValue(key, out var entry) ? entry.Value : 1f;
+        }
+
+        internal IReadOnlyList<string> ConditionKeys => _conditionKeys ?? Array.Empty<string>();
+
+        internal string ConditionDisplayName(string key)
+        {
+            var translated = TranslateGameKey(key);
+            if (!string.IsNullOrWhiteSpace(translated)) return translated;
+            return T(ConditionLabelEnglish(key), ConditionLabelChinese(key));
+        }
+
+        internal bool GetConditionEnabledValue(string key)
+        {
+            return IsConditionEnabled(key);
+        }
+
+        internal void SetConditionEnabledValue(string key, bool value)
+        {
+            if (_conditionEnabled == null || string.IsNullOrWhiteSpace(key)) return;
+            if (_conditionEnabled.TryGetValue(key, out var entry)) entry.Value = value;
+        }
+
+        internal float GetConditionScaleValue(string key)
+        {
+            return ConditionScale(key);
+        }
+
+        internal void SetConditionScaleValue(string key, float value)
+        {
+            if (_conditionScale == null || string.IsNullOrWhiteSpace(key)) return;
+            if (_conditionScale.TryGetValue(key, out var entry)) entry.Value = Mathf.Clamp(value, 0f, 2f);
         }
 
         private void BindUiConfig()
@@ -177,7 +366,7 @@ namespace DGLab.BepInEx
             _miniOverlayToggleAltRequired = _advancedConfig.Bind("UI", "OutputMonitorToggleAltRequired", true, Text("Require Alt + OutputMonitorToggleKey to toggle the output monitor.", "要求 Alt + 输出监视器按键 才能开关输出监视器。"));
             _waveMonitorToggleKey = _advancedConfig.Bind("UI", "WaveViewerToggleKey", KeyCode.LeftBracket, Text("Wave viewer toggle key.", "波形查看器切换键。"));
             _waveMonitorToggleAltRequired = _advancedConfig.Bind("UI", "WaveViewerToggleAltRequired", true, Text("Require Alt + WaveViewerToggleKey to toggle the wave viewer.", "要求 Alt + 波形查看器按键 才能开关波形查看器。"));
-            _uiLanguage = _advancedConfig.Bind("UI", "Language", "English", Text("UI language: English or Chinese.", "界面语言：English 或 Chinese。"));
+            _uiLanguage = _advancedConfig.Bind("UI", "Language", "English", Text("UI language. Language JSON files are read from the game folder and shown by their name field.", "界面语言。会读取游戏文件夹内语言 JSON 的 name 字段并显示。"));
             _miniOverlayEnabled = _advancedConfig.Bind("UI", "OutputMonitorEnabled", true, Text("Show a persistent compact output monitor. Controls stay in the main menu.", "显示常驻迷你输出监视器。控制项只保留在主菜单。"));
             _waveMonitorEnabled = _advancedConfig.Bind("UI", "WaveViewerEnabled", true, Text("Show the wave viewer window used to inspect the current output waveform.", "显示波形查看器窗口，用于查看当前实际输出的波形。"));
         }

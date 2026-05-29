@@ -97,12 +97,12 @@ namespace DGLab.BepInEx
 
             // Profile toggle buttons
             GUI.Label(new Rect(x, posY + 58f, labelWidth, row), _owner.T("Profile", "类型") + ":");
-            if (DrawToggleButton(new Rect(x + labelWidth, posY + 58f, 130f, row),
-                _owner.T("Official Socket", "官方 Socket"), isOfficial))
-                _owner.SwitchExternalBackendProfile("OfficialSocket");
-            if (DrawToggleButton(new Rect(x + labelWidth + 136f, posY + 58f, 150f, row),
-                _owner.T("Third-Party", "第三方控制器"), !isOfficial))
-                _owner.SwitchExternalBackendProfile("ThirdPartyController");
+            var profileY = posY + 58f;
+            DrawButtonFlow(x + labelWidth, ref profileY, w - labelWidth, row, new[]
+            {
+                ButtonLayoutItem.Toggle(_owner.T("Official Socket", "官方 Socket"), isOfficial, () => _owner.SwitchExternalBackendProfile("OfficialSocket")),
+                ButtonLayoutItem.Toggle(_owner.T("Third-Party", "第三方控制器"), !isOfficial, () => _owner.SwitchExternalBackendProfile("ThirdPartyController"))
+            });
 
             var statusRowY = posY + 82f;
             if (showServerInput)
@@ -123,15 +123,15 @@ namespace DGLab.BepInEx
             {
                 // ── QR Code ─────────────────────────────────────────────────
                 var backendConnected = _owner.IsBackendConnected;
-                var candidates = _owner.QrAddressCandidates;
                 var showQrDetails = backendConnected && _owner.QrPanelExpanded;
-                var ipRowHeight = showQrDetails && candidates.Count > 0 ? row + 6f : 0f;
                 var qrTex = showQrDetails ? _owner.GetQrTexture() : null;
                 var qrHeight = !backendConnected ? 32f : (showQrDetails ? (qrTex != null ? 200f : 50f) : 26f);
-                GUI.Box(new Rect(0f, posY, contentWidth, 46f + qrHeight + ipRowHeight), "");
+                GUI.Box(new Rect(0f, posY, contentWidth, 46f + qrHeight), "");
                 GUI.Label(new Rect(x, posY + 8f, w, row), Section(_owner.T("QR Code", "二维码")));
                 GUI.enabled = backendConnected;
-                if (GUI.Button(new Rect(x + w - 104f, posY + 7f, 104f, row), showQrDetails ? _owner.T("Collapse", "收起") : _owner.T("Show QR", "显示二维码")))
+                var qrButtonLabel = showQrDetails ? _owner.T("Collapse", "收起") : _owner.T("Show QR", "显示二维码");
+                var qrButtonWidth = Mathf.Min(CalcButtonWidth(qrButtonLabel, 80f, 160f), w * 0.45f);
+                if (GUI.Button(new Rect(x + w - qrButtonWidth, posY + 7f, qrButtonWidth, row), qrButtonLabel))
                     _owner.ToggleQrPanelExpanded();
                 GUI.enabled = true;
                 if (!backendConnected)
@@ -142,41 +142,31 @@ namespace DGLab.BepInEx
                     GUI.DrawTexture(new Rect(x + (w - 192f) * 0.5f, posY + 34f, 192f, 192f), qrTex, ScaleMode.ScaleToFit);
                 else
                     GUI.Label(new Rect(x, posY + 34f, w, row), _owner.T("Waiting for QR data…", "等待二维码数据…"));
-                if (showQrDetails && candidates.Count > 0)
-                {
-                    var ipY = posY + 34f + qrHeight + 4f;
-                    var btnW = Mathf.Min(130f, (w - spacing * (candidates.Count - 1)) / candidates.Count);
-                    for (var i = 0; i < candidates.Count; i++)
-                    {
-                        var ip = candidates[i];
-                        var active = _owner.QrWebSocketUrlText.Contains(ip);
-                        if (DrawToggleButton(new Rect(x + i * (btnW + spacing), ipY, btnW, row), ip, active))
-                            _owner.SelectQrAddress(ip);
-                    }
-                }
-                posY += 56f + qrHeight + ipRowHeight;
+                posY += 56f + qrHeight;
             }
 
             var y = posY;
 
             // ── Actions ─────────────────────────────────────────────────────
-            const float actionsBoxHeight = 84f;
             var boxY = y;
+            var actionItems = _owner.ShowQrPanel
+                ? new[]
+                {
+                    ButtonLayoutItem.Action(_owner.T("Restart Backend", "重启后端"), _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。"), () => _owner.ReconnectFromMenu()),
+                    ButtonLayoutItem.Action(_owner.T("Refresh QR", "刷新二维码"), _owner.T("Regenerate the QR code image.", "重新生成二维码图片。"), () => _owner.EnsureConnectedForQrFromMenu(), _owner.IsBackendConnected),
+                    ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu())
+                }
+                : new[]
+                {
+                    ButtonLayoutItem.Action(_owner.T("Restart Backend", "重启后端"), _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。"), () => _owner.ReconnectFromMenu()),
+                    ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu())
+                };
+            var actionRowsHeight = MeasureButtonFlowHeight(innerWidth - spacing * 2f, row, actionItems);
+            var actionsBoxHeight = Mathf.Max(84f, 36f + actionRowsHeight + spacing);
             GUI.Box(new Rect(0f, boxY, innerWidth, actionsBoxHeight), "");
             GUI.Label(new Rect(spacing, boxY + 8f, innerWidth - spacing * 2f, row), Section(_owner.T("Actions", "操作")));
             y += 36f;
-
-            if (TooltipButton(new Rect(spacing, y, 140f, row), _owner.T("Restart Backend", "重启后端"),
-                _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。")))
-                _owner.ReconnectFromMenu();
-            GUI.enabled = _owner.IsBackendConnected;
-            if (_owner.ShowQrPanel && TooltipButton(new Rect(spacing + 148f, y, 140f, row), _owner.T("Refresh QR", "刷新二维码"),
-                    _owner.T("Regenerate the QR code image.", "重新生成二维码图片。")))
-                    _owner.EnsureConnectedForQrFromMenu();
-            GUI.enabled = true;
-            if (TooltipButton(new Rect(_owner.ShowQrPanel ? spacing + 296f : spacing + 148f, y, 110f, row), _owner.T("Disconnect", "断开"),
-                _owner.T("Disconnect the current device connection.", "断开当前设备连接。")))
-                _owner.DisconnectFromMenu();
+            DrawButtonFlow(spacing, ref y, innerWidth - spacing * 2f, row, actionItems);
             y = boxY + actionsBoxHeight + spacing;
 
             // ── Strength Limits ─────────────────────────────────────────────
@@ -209,18 +199,33 @@ namespace DGLab.BepInEx
             DrawBodyPartPicker(spacing, ref y, row, innerWidth);
             y = Mathf.Max(y, boxY + bindingBoxHeight) + spacing;
 
-            // ── Settings ─────────────────────────────────────────────────────
-            const float settingsBoxHeight = 178f;
+            // ── Condition Sampling ───────────────────────────────────────────
             boxY = y;
-            GUI.Box(new Rect(0f, boxY, innerWidth, settingsBoxHeight), "");
-            GUI.Label(new Rect(spacing, boxY + 8f, innerWidth - spacing * 2f, row), Section(_owner.T("Settings", "设置")));
+            var conditionWidth = innerWidth - spacing * 2f;
+            var conditionIntro = _owner.T("The Ongoing Body State switch above only pauses sampling; these per-condition settings are preserved.",
+                                          "上面的持续身体状态总开关只暂停采样；这里每个状态的启用和倍率配置都会保留。");
+            var conditionIntroHeight = MeasureWrappedLabelHeight(conditionIntro, conditionWidth, 34f);
+            var conditionBoxHeight = 36f + conditionIntroHeight + 6f + MeasureConditionConfigHeight(row, conditionWidth) + spacing;
+            GUI.Box(new Rect(0f, boxY, innerWidth, conditionBoxHeight), "");
+            GUI.Label(new Rect(spacing, boxY + 8f, conditionWidth, row), Section(_owner.T("Condition Sampling", "状态采样配置")));
             y += 36f;
+            DrawWrappedLabel(new Rect(spacing, y, conditionWidth, conditionIntroHeight), conditionIntro);
+            y += conditionIntroHeight + 6f;
+            DrawConditionConfig(spacing, ref y, conditionWidth, row);
+            y = boxY + conditionBoxHeight + spacing;
 
+            // ── Settings ─────────────────────────────────────────────────────
+            boxY = y;
             var colGap = 8f;
             var colW = (innerWidth - spacing * 2f - colGap * 2f) / 3f;
             var col1 = spacing;
             var col2 = col1 + colW + colGap;
             var col3 = col2 + colW + colGap;
+            var languageHeight = MeasureLanguageButtonsHeight(new Rect(col1, 0f, innerWidth - spacing * 2f, row));
+            var settingsBoxHeight = Mathf.Max(208f, 36f + row * 4f + 4f * 3f + 8f + languageHeight + spacing);
+            GUI.Box(new Rect(0f, boxY, innerWidth, settingsBoxHeight), "");
+            GUI.Label(new Rect(spacing, boxY + 8f, innerWidth - spacing * 2f, row), Section(_owner.T("Settings", "设置")));
+            y += 36f;
 
             _owner.EnabledValue = TooltipToggle(new Rect(col1, y, colW, row), _owner.EnabledValue,
                 _owner.T("Enable BodySync", "启用体感同步"),
@@ -247,23 +252,26 @@ namespace DGLab.BepInEx
             _owner.DebugLogValue = TooltipToggle(new Rect(col1, y, colW, row), _owner.DebugLogValue,
                 _owner.T("Debug log", "调试日志"),
                 _owner.T("Log detailed diagnostics including all incoming messages.", "输出详细诊断日志，包括所有收到的消息。"));
+            y += row + 4f;
+
+            GUI.Label(new Rect(col1, y, colW, row), _owner.T("Wake recovery", "苏醒恢复") + ": " + _owner.UnconsciousRecoverySecondsValue + "s");
+            if (GUI.Button(new Rect(col2, y, 32f, row), "-")) _owner.UnconsciousRecoverySecondsValue = _owner.UnconsciousRecoverySecondsValue - 1;
+            if (GUI.Button(new Rect(col2 + 36f, y, 32f, row), "+")) _owner.UnconsciousRecoverySecondsValue = _owner.UnconsciousRecoverySecondsValue + 1;
+            GUI.Label(new Rect(col2 + 74f, y, colW - 74f, row), _owner.T("0-30 seconds", "0-30 秒"));
             y += row + 8f;
 
-            GUI.Label(new Rect(col1, y, 72f, row), _owner.T("Language", "语言") + ":");
-            if (DrawToggleButton(new Rect(col1 + 54f, y, 90f, row), "English", _owner.UiLanguageValue == "English")) _owner.UiLanguageValue = "English";
-            if (DrawToggleButton(new Rect(col1 + 150f, y, 72f, row), "中文", _owner.UiLanguageValue == "Chinese")) _owner.UiLanguageValue = "Chinese";
-            y = Mathf.Max(y + row, boxY + settingsBoxHeight) + spacing;
+            y += DrawLanguageButtons(new Rect(col1, y, innerWidth - spacing * 2f, row));
+            y = boxY + settingsBoxHeight + spacing;
 
             // ── Key Bindings ────────────────────────────────────────────────
-            const float keyBoxHeight = 126f;
             boxY = y;
+            var keyHeight = MeasureKeyBindFlowHeight(innerWidth - spacing * 2f, row);
+            var keyBoxHeight = Mathf.Max(126f, 36f + keyHeight + spacing);
             GUI.Box(new Rect(0f, boxY, innerWidth, keyBoxHeight), "");
             GUI.Label(new Rect(spacing, boxY + 8f, innerWidth - spacing * 2f, row), Section(_owner.T("Key Bindings", "快捷键")));
             y += 36f;
 
-            DrawKeyBindColumn(new Rect(col1, y, colW, row * 3f + 4f), _owner.T("Menu", "主菜单"), _owner.WaitingForMenuKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : ((_owner.MenuToggleAltRequired ? "Alt+" : "") + _owner.MenuToggleKeyName), _owner.BeginMenuKeyBind, _owner.ResetMenuKeyBind);
-            DrawKeyBindColumn(new Rect(col2, y, colW, row * 3f + 4f), _owner.T("Wave Viewer", "波形查看器"), _owner.WaitingForWaveMonitorKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : _owner.WaveMonitorToggleKeyDisplay, _owner.BeginWaveMonitorKeyBind, _owner.ResetWaveMonitorKeyBind);
-            DrawKeyBindColumn(new Rect(col3, y, colW, row * 3f + 4f), _owner.T("Output Monitor", "输出监视器"), _owner.WaitingForStatusOverlayKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : _owner.MiniOverlayToggleKeyDisplay, _owner.BeginStatusOverlayKeyBind, _owner.ResetStatusOverlayKeyBind);
+            DrawKeyBindFlow(spacing, y, innerWidth - spacing * 2f, row);
             y = boxY + keyBoxHeight + spacing;
             _scrollContentHeight = y + spacing;
 
@@ -301,15 +309,48 @@ namespace DGLab.BepInEx
             return GUI.Toggle(rect, value, new GUIContent(label, tooltip));
         }
 
+        private float DrawLanguageButtons(Rect rect)
+        {
+            var label = _owner.T("Language", "语言") + ":";
+            var labelWidth = Mathf.Max(54f, GUI.skin.label.CalcSize(new GUIContent(label)).x + 8f);
+            GUI.Label(new Rect(rect.x, rect.y, labelWidth, rect.height), label);
+
+            var options = _owner.UiLanguageOptions;
+            var selected = _owner.UiLanguageValue;
+            var items = new ButtonLayoutItem[options.Count];
+            for (var i = 0; i < options.Count; i++)
+            {
+                var option = options[i];
+                items[i] = ButtonLayoutItem.Toggle(option.Name, string.Equals(selected, option.Id, System.StringComparison.OrdinalIgnoreCase), () => _owner.UiLanguageValue = option.Id);
+            }
+
+            var buttonY = rect.y;
+            DrawButtonFlow(rect.x + labelWidth, ref buttonY, rect.width - labelWidth, rect.height, items);
+            return Mathf.Max(rect.height, buttonY - rect.y);
+        }
+
+        private float MeasureLanguageButtonsHeight(Rect rect)
+        {
+            var label = _owner.T("Language", "语言") + ":";
+            var labelWidth = Mathf.Max(54f, GUI.skin.label.CalcSize(new GUIContent(label)).x + 8f);
+            var options = _owner.UiLanguageOptions;
+            var items = new ButtonLayoutItem[options.Count];
+            for (var i = 0; i < options.Count; i++) items[i] = ButtonLayoutItem.Action(options[i].Name, null, null);
+            return Mathf.Max(rect.height, MeasureButtonFlowHeight(rect.width - labelWidth, rect.height, items));
+        }
+
         private void DrawChannelPresetButtons(float spacing, ref float y, float row, float innerWidth)
         {
             GUI.Label(new Rect(spacing, y, 100f, row), _owner.T("Presets", "常用预设"));
-            var x = spacing + 100f;
-            if (GUI.Button(new Rect(x, y, 86f, row), _owner.T("A Upper", "A上半身"))) _owner.ChannelABodyPartsValue = "UpperBody";
-            if (GUI.Button(new Rect(x + 92f, y, 86f, row), _owner.T("B Lower", "B下半身"))) _owner.ChannelBBodyPartsValue = "LowerBody";
-            if (GUI.Button(new Rect(x + 184f, y, 86f, row), _owner.T("A Arms", "A双臂"))) _owner.ChannelABodyPartsValue = "Arms";
-            if (GUI.Button(new Rect(x + 276f, y, 86f, row), _owner.T("B Legs", "B双腿"))) _owner.ChannelBBodyPartsValue = "Legs";
-            y += row + 8f;
+            var buttonY = y;
+            DrawButtonFlow(spacing + 100f, ref buttonY, innerWidth - spacing * 2f - 100f, row, new[]
+            {
+                ButtonLayoutItem.Action(_owner.T("A Upper", "A上半身"), null, () => _owner.ChannelABodyPartsValue = "UpperBody"),
+                ButtonLayoutItem.Action(_owner.T("B Lower", "B下半身"), null, () => _owner.ChannelBBodyPartsValue = "LowerBody"),
+                ButtonLayoutItem.Action(_owner.T("A Arms", "A双臂"), null, () => _owner.ChannelABodyPartsValue = "Arms"),
+                ButtonLayoutItem.Action(_owner.T("B Legs", "B双腿"), null, () => _owner.ChannelBBodyPartsValue = "Legs")
+            });
+            y = buttonY + 8f;
         }
 
         private void DrawBodyPartPicker(float spacing, ref float y, float row, float innerWidth)
@@ -373,6 +414,57 @@ namespace DGLab.BepInEx
 
             DrawWrappedLabel(new Rect(spacing, y, innerWidth - spacing * 2f, 56f), _owner.T("A/B buttons toggle the part for that channel. Text fields above are kept for advanced manual editing.", "A/B 按钮会把该部位加入或移出对应通道。上方输入框保留给高级手动编辑。"));
             y += 60f;
+        }
+
+        private float MeasureConditionConfigHeight(float row, float width)
+        {
+            var keys = _owner.ConditionKeys;
+            var columns = ConditionConfigColumns(width);
+            var rows = Mathf.CeilToInt(keys.Count / (float)columns);
+            return Mathf.Max(row, rows * 30f);
+        }
+
+        private void DrawConditionConfig(float x, ref float y, float width, float row)
+        {
+            var keys = _owner.ConditionKeys;
+            var columns = ConditionConfigColumns(width);
+            const float gap = 10f;
+            var cellWidth = (width - gap * (columns - 1)) / columns;
+            var rows = Mathf.CeilToInt(keys.Count / (float)columns);
+            var startY = y;
+            for (var i = 0; i < keys.Count; i++)
+            {
+                var col = i % columns;
+                var line = i / columns;
+                var rect = new Rect(x + col * (cellWidth + gap), startY + line * 30f, cellWidth, row);
+                DrawConditionConfigRow(rect, keys[i]);
+            }
+            y = startY + rows * 30f;
+        }
+
+        private static int ConditionConfigColumns(float width)
+        {
+            const float minReadableColumnWidth = 320f;
+            return Mathf.Max(1, Mathf.FloorToInt((width + 10f) / (minReadableColumnWidth + 10f)));
+        }
+
+        private void DrawConditionConfigRow(Rect rect, string key)
+        {
+            var toggleWidth = 52f;
+            var valueWidth = 46f;
+            var labelWidth = Mathf.Clamp(rect.width * 0.34f, 112f, 170f);
+            GUI.Label(new Rect(rect.x, rect.y, labelWidth, rect.height), _owner.ConditionDisplayName(key));
+            var enabled = GUI.Toggle(new Rect(rect.x + labelWidth, rect.y, toggleWidth, rect.height), _owner.GetConditionEnabledValue(key), _owner.T("On", "开"));
+            _owner.SetConditionEnabledValue(key, enabled);
+
+            var sliderX = rect.x + labelWidth + toggleWidth + 4f;
+            var sliderWidth = rect.width - labelWidth - toggleWidth - valueWidth - 8f;
+            GUI.enabled = enabled;
+            var scale = _owner.GetConditionScaleValue(key);
+            var next = GUI.HorizontalSlider(new Rect(sliderX, rect.y + 5f, sliderWidth, rect.height), scale, 0f, 2f);
+            if (Mathf.Abs(next - scale) > 0.001f) _owner.SetConditionScaleValue(key, next);
+            GUI.Label(new Rect(sliderX + sliderWidth + 4f, rect.y, valueWidth, rect.height), next.ToString("0.00") + "x");
+            GUI.enabled = true;
         }
 
         private float DrawBodyPartGroup(float x, float y, float width, string title, BodyPartOption[] parts, float row, int columns)
@@ -447,6 +539,156 @@ namespace DGLab.BepInEx
             return _owner.T("Reset to Alt+]", "重置为 Alt+]");
         }
 
+        private float DrawKeyBindFlow(float x, float y, float width, float row)
+        {
+            var startY = y;
+            var items = GetKeyBindItems();
+            var cursorX = x;
+            var cursorY = y;
+            const float gap = 8f;
+            const float minColumnWidth = 150f;
+            const float maxColumnWidth = 220f;
+            var columnHeight = row * 3f + 8f;
+
+            for (var i = 0; i < items.Length; i++)
+            {
+                var item = items[i];
+                var desired = Mathf.Clamp(GUI.skin.label.CalcSize(new GUIContent(item.Title)).x + 40f, minColumnWidth, maxColumnWidth);
+                if (cursorX > x && cursorX + desired > x + width)
+                {
+                    cursorX = x;
+                    cursorY += columnHeight + gap;
+                }
+
+                var columnWidth = Mathf.Min(desired, x + width - cursorX);
+                DrawKeyBindColumn(new Rect(cursorX, cursorY, columnWidth, columnHeight), item.Title, item.KeyLabel, item.Change, item.Reset);
+                cursorX += columnWidth + gap;
+            }
+
+            return cursorY + columnHeight - startY;
+        }
+
+        private float MeasureKeyBindFlowHeight(float width, float row)
+        {
+            var items = GetKeyBindItems();
+            const float gap = 8f;
+            const float minColumnWidth = 150f;
+            const float maxColumnWidth = 220f;
+            var columnHeight = row * 3f + 8f;
+            var cursorX = 0f;
+            var rows = 1;
+
+            for (var i = 0; i < items.Length; i++)
+            {
+                var desired = Mathf.Clamp(GUI.skin.label.CalcSize(new GUIContent(items[i].Title)).x + 40f, minColumnWidth, maxColumnWidth);
+                if (cursorX > 0f && cursorX + desired > width)
+                {
+                    cursorX = 0f;
+                    rows++;
+                }
+                cursorX += Mathf.Min(desired, width - cursorX) + gap;
+            }
+
+            return rows * columnHeight + (rows - 1) * gap;
+        }
+
+        private KeyBindLayoutItem[] GetKeyBindItems()
+        {
+            return new[]
+            {
+                new KeyBindLayoutItem(_owner.T("Menu", "主菜单"), _owner.WaitingForMenuKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : ((_owner.MenuToggleAltRequired ? "Alt+" : "") + _owner.MenuToggleKeyName), _owner.BeginMenuKeyBind, _owner.ResetMenuKeyBind),
+                new KeyBindLayoutItem(_owner.T("Wave Viewer", "波形查看器"), _owner.WaitingForWaveMonitorKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : _owner.WaveMonitorToggleKeyDisplay, _owner.BeginWaveMonitorKeyBind, _owner.ResetWaveMonitorKeyBind),
+                new KeyBindLayoutItem(_owner.T("Output Monitor", "输出监视器"), _owner.WaitingForStatusOverlayKeyBind ? _owner.T("Waiting for key...", "正在等待按键...") : _owner.MiniOverlayToggleKeyDisplay, _owner.BeginStatusOverlayKeyBind, _owner.ResetStatusOverlayKeyBind)
+            };
+        }
+
+        private static void DrawButtonFlow(float x, ref float y, float width, float row, ButtonLayoutItem[] items)
+        {
+            const float gap = 6f;
+            var cursorX = x;
+            for (var i = 0; i < items.Length; i++)
+            {
+                var item = items[i];
+                var buttonWidth = Mathf.Min(CalcButtonWidth(item.Label, 58f, 170f), width);
+                if (cursorX > x && cursorX + buttonWidth > x + width)
+                {
+                    cursorX = x;
+                    y += row + gap;
+                }
+
+                var rect = new Rect(cursorX, y, Mathf.Min(buttonWidth, x + width - cursorX), row);
+                var wasEnabled = GUI.enabled;
+                GUI.enabled = wasEnabled && item.Enabled;
+                var clicked = item.IsToggle ? DrawToggleButton(rect, item.Label, item.Active) : GUI.Button(rect, new GUIContent(item.Label, item.Tooltip));
+                GUI.enabled = wasEnabled;
+                if (clicked) item.OnClick?.Invoke();
+                cursorX += rect.width + gap;
+            }
+
+            y += row;
+        }
+
+        private static float MeasureButtonFlowHeight(float width, float row, ButtonLayoutItem[] items)
+        {
+            const float gap = 6f;
+            if (items == null || items.Length == 0) return row;
+            var cursorX = 0f;
+            var rows = 1;
+            for (var i = 0; i < items.Length; i++)
+            {
+                var buttonWidth = Mathf.Min(CalcButtonWidth(items[i].Label, 58f, 170f), width);
+                if (cursorX > 0f && cursorX + buttonWidth > width)
+                {
+                    cursorX = 0f;
+                    rows++;
+                }
+                cursorX += buttonWidth + gap;
+            }
+
+            return rows * row + (rows - 1) * gap;
+        }
+
+        private static float CalcButtonWidth(string label, float min, float max)
+        {
+            return Mathf.Clamp(GUI.skin.button.CalcSize(new GUIContent(label ?? string.Empty)).x + 18f, min, max);
+        }
+
+        private struct ButtonLayoutItem
+        {
+            public string Label;
+            public string Tooltip;
+            public System.Action OnClick;
+            public bool IsToggle;
+            public bool Active;
+            public bool Enabled;
+
+            public static ButtonLayoutItem Action(string label, string tooltip, System.Action action, bool enabled = true)
+            {
+                return new ButtonLayoutItem { Label = label, Tooltip = tooltip, OnClick = action, Enabled = enabled };
+            }
+
+            public static ButtonLayoutItem Toggle(string label, bool active, System.Action action, bool enabled = true)
+            {
+                return new ButtonLayoutItem { Label = label, OnClick = action, IsToggle = true, Active = active, Enabled = enabled };
+            }
+        }
+
+        private struct KeyBindLayoutItem
+        {
+            public readonly string Title;
+            public readonly string KeyLabel;
+            public readonly System.Action Change;
+            public readonly System.Action Reset;
+
+            public KeyBindLayoutItem(string title, string keyLabel, System.Action change, System.Action reset)
+            {
+                Title = title;
+                KeyLabel = keyLabel;
+                Change = change;
+                Reset = reset;
+            }
+        }
+
         private int DrawSlider(string label, int value, int min, int max, float x, float y, float labelWidth, float width, string tooltip)
         {
             GUI.Label(new Rect(x, y, labelWidth, 24f), new GUIContent(label, tooltip));
@@ -460,6 +702,13 @@ namespace DGLab.BepInEx
             if (_wrappedLabelStyle == null)
                 _wrappedLabelStyle = new GUIStyle(GUI.skin.label) { wordWrap = true, clipping = TextClipping.Clip };
             GUI.Label(rect, text, _wrappedLabelStyle);
+        }
+
+        private float MeasureWrappedLabelHeight(string text, float width, float minHeight)
+        {
+            if (_wrappedLabelStyle == null)
+                _wrappedLabelStyle = new GUIStyle(GUI.skin.label) { wordWrap = true, clipping = TextClipping.Clip };
+            return Mathf.Max(minHeight, _wrappedLabelStyle.CalcHeight(new GUIContent(text ?? string.Empty), width));
         }
 
         private static bool IsAnyMouseButtonOrScrollWheelDown()

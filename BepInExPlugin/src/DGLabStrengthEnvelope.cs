@@ -22,6 +22,8 @@ namespace DGLab.BepInEx
         private float _nextSendTimeB;
         private int _lastSentStrengthA = -1;
         private int _lastSentStrengthB = -1;
+        private float _recoveryUntilTime;
+        private float _recoverySeconds;
 
         public float CurrentRatio => Mathf.Max(_currentRatioA, _currentRatioB);
         public float CurrentRatioA => _currentRatioA;
@@ -97,6 +99,18 @@ namespace DGLab.BepInEx
             _currentRatioB = 0f;
             _sustainedRatioA = 0f;
             _sustainedRatioB = 0f;
+            _recoveryUntilTime = 0f;
+            _recoverySeconds = 0f;
+            Apply(1, reason, force: true);
+            Apply(2, reason, force: true);
+        }
+
+        public void BeginRecovery(float seconds, string reason)
+        {
+            seconds = Mathf.Clamp(seconds, 0f, 30f);
+            if (seconds <= 0f) return;
+            _recoverySeconds = seconds;
+            _recoveryUntilTime = Time.time + seconds;
             Apply(1, reason, force: true);
             Apply(2, reason, force: true);
         }
@@ -144,7 +158,8 @@ namespace DGLab.BepInEx
                 ? Mathf.Clamp(channel == 2 ? _state.DeviceLimitB : _state.DeviceLimitA, 0, 200)
                 : 200;
             var effectiveMax = Mathf.Min(configuredMax, deviceLimit);
-            var strength = Mathf.Clamp(Mathf.RoundToInt(effectiveMax * Mathf.Clamp01(ratio)), 0, effectiveMax);
+            var gatedRatio = Mathf.Clamp01(ratio * RecoveryScale());
+            var strength = Mathf.Clamp(Mathf.RoundToInt(effectiveMax * gatedRatio), 0, effectiveMax);
             _state?.SetStrength(channel, strength, reason);
 
             var now = Time.time;
@@ -168,6 +183,20 @@ namespace DGLab.BepInEx
 
             if (channel == 2) client.SetStrengthB(strength);
             else client.SetStrengthA(strength);
+        }
+
+        private float RecoveryScale()
+        {
+            if (_recoveryUntilTime <= 0f || _recoverySeconds <= 0f) return 1f;
+            var remaining = _recoveryUntilTime - Time.time;
+            if (remaining <= 0f)
+            {
+                _recoveryUntilTime = 0f;
+                _recoverySeconds = 0f;
+                return 1f;
+            }
+            var progress = 1f - Mathf.Clamp01(remaining / _recoverySeconds);
+            return Mathf.SmoothStep(0f, 1f, progress);
         }
     }
 }

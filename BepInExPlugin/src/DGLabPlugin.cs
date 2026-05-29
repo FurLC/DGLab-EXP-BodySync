@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -56,15 +57,22 @@ namespace DGLab.BepInEx
         private DGLabStrengthEnvelope _strengthEnvelope;
         private DGLabQrService _qrService;
         private DGLabImGuiRunner _standaloneImGuiRunner;
+        private readonly List<UiLanguageOption> _uiLanguageOptions = new List<UiLanguageOption>();
+        private readonly Dictionary<string, Dictionary<string, string>> _gameLanguageCache = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        private float _nextLanguageScanTime = -1f;
         private float _lastObservedShock;
         private float _lastObservedUpperPain;
         private float _lastObservedLowerPain;
         private float _lastObservedConsciousness = 100f;
         private Body _lastObservedBody;
         private bool _bodyObservationBaselineReady;
+        private bool _wasUnconscious;
         private bool _outputClearedForNoBody = true;
         private string _lastInactiveReason = string.Empty;
         private bool _wasCritical;
+        private bool _lastConditionMixerEnabled;
+        private bool _lastWaveEventsEnabled;
+        private bool _lastDamageHookEnabled;
         private bool _waitingForMenuKeyBind;
         private string _waitingForUiKeyBind;
         private Harmony _harmony;
@@ -136,6 +144,7 @@ namespace DGLab.BepInEx
                     _strengthEnvelope,
                     () => _channelABodyParts.Value,
                     () => _channelBBodyParts.Value);
+                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
                 _harmony.PatchAll();
                 _log.LogInfo("DG-Lab damage hook enabled.");
             }
@@ -196,6 +205,7 @@ namespace DGLab.BepInEx
                 _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
                 RegisterDefaultWaves();
                 DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
+                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
             }
             catch (System.Exception ex)
             {
@@ -208,6 +218,7 @@ namespace DGLab.BepInEx
                 _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
                 RegisterDefaultWaves();
                 DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
+                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
             }
         }
 
@@ -221,6 +232,8 @@ namespace DGLab.BepInEx
                 () => _channelABodyParts.Value,
                 () => _channelBBodyParts.Value,
                 IsOutputChannelEnabled,
+                IsConditionEnabled,
+                ConditionScale,
                 () => _realtimeTestLog.Value,
                 () => _realtimeTestLogInterval.Value);
         }
@@ -339,6 +352,14 @@ namespace DGLab.BepInEx
                 return;
             }
 
+            TickUnconsciousRecovery(body);
+
+            if (_stopOutputWhenUnconscious != null && _stopOutputWhenUnconscious.Value && IsUnconscious(body))
+            {
+                ClearOutputForInactiveBody("unconscious");
+                return;
+            }
+
             _outputClearedForNoBody = false;
             _lastInactiveReason = string.Empty;
             _strengthEnvelope?.Tick();
@@ -349,26 +370,82 @@ namespace DGLab.BepInEx
 
             ObserveBodyState(body);
 
-            if (_enableWaveEvents == null || !_enableWaveEvents.Value) return;
+            TickOutputFeatureToggles();
 
             if (_enableConditionMixer != null && _enableConditionMixer.Value)
             {
                 _conditionMixer?.Tick(body);
             }
 
-            if (_enableDeathState.Value)
+            if (_enableWaveEvents == null || !_enableWaveEvents.Value) return;
+
+            if (_enableDeathState != null && _enableDeathState.Value)
             {
                 if (isDead) _waveRouter.StartPersistent("death", DGLabWaveLibrary.DeathLoop, _deathWaveDuration.Value);
                 else _waveRouter.StopPersistent("death");
             }
 
-            if (_enableCriticalState.Value)
+            if (_enableCriticalState != null && _enableCriticalState.Value)
             {
                 if (isCritical && !isDead && !_wasCritical) _waveRouter.StartPersistent("critical", DGLabWaveLibrary.CriticalLoop, _criticalWaveDuration.Value);
                 else if (!isCritical && _wasCritical) _waveRouter.StopPersistent("critical");
             }
 
             _wasCritical = isCritical && !isDead;
+        }
+
+        private void TickOutputFeatureToggles()
+        {
+            var conditionEnabled = _enableConditionMixer != null && _enableConditionMixer.Value;
+            var waveEventsEnabled = _enableWaveEvents != null && _enableWaveEvents.Value;
+            var damageHookEnabled = _enableDamageHook != null && _enableDamageHook.Value;
+
+            if (_lastConditionMixerEnabled && !conditionEnabled)
+            {
+                ClearConditionMixerOutput("condition-disabled");
+                _log?.LogInfo("DG-Lab ongoing body state sampling disabled; sustained output cleared.");
+            }
+
+            if (_lastWaveEventsEnabled && !waveEventsEnabled)
+            {
+                ClearWaveEventOutputs("wave-events-disabled");
+                _log?.LogInfo("DG-Lab event waveform pulses disabled; active wave output cleared.");
+            }
+
+            if (_lastDamageHookEnabled != damageHookEnabled)
+            {
+                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
+                _log?.LogInfo("DG-Lab injury reaction triggers " + (damageHookEnabled ? "enabled." : "disabled."));
+            }
+
+            _lastConditionMixerEnabled = conditionEnabled;
+            _lastWaveEventsEnabled = waveEventsEnabled;
+            _lastDamageHookEnabled = damageHookEnabled;
+        }
+
+        private void ClearConditionMixerOutput(string reason)
+        {
+            _conditionMixer?.Clear(reason);
+            if (_client != null && _client.HasTarget)
+            {
+                _client.SetStrengthA(0);
+                _client.SetStrengthB(0);
+            }
+        }
+
+        private void ClearWaveEventOutputs(string reason)
+        {
+            _persistent?.Stop("death");
+            _persistent?.Stop("critical");
+            _waveRouter?.StopPersistent("death");
+            _waveRouter?.StopPersistent("critical");
+            _outputState?.SetWave(1, reason, "none", null, 0);
+            _outputState?.SetWave(2, reason, "none", null, 0);
+            if (_client != null && _client.HasTarget)
+            {
+                _client.ClearWaveA();
+                _client.ClearWaveB();
+            }
         }
 
         internal void HostedMenuOnGUI(string source)
@@ -718,13 +795,24 @@ namespace DGLab.BepInEx
         internal bool EnableDamageHookValue
         {
             get => _enableDamageHook.Value;
-            set => _enableDamageHook.Value = value;
+            set
+            {
+                if (_enableDamageHook.Value == value) return;
+                _enableDamageHook.Value = value;
+                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
+            }
         }
 
         internal bool EnableWaveEventsValue
         {
             get => _enableWaveEvents.Value;
-            set => _enableWaveEvents.Value = value;
+            set
+            {
+                if (_enableWaveEvents.Value == value) return;
+                _enableWaveEvents.Value = value;
+                DamageHooks.UpdateContext(_client, value ? _waveRouter : null, _outputState, _strengthEnvelope);
+                if (!value) ClearWaveEventOutputs("wave-events-disabled");
+            }
         }
 
         internal bool DebugLogValue
@@ -733,12 +821,188 @@ namespace DGLab.BepInEx
             set => _debugLog.Value = value;
         }
 
-        internal bool IsChineseUi => string.Equals(_uiLanguage.Value, "Chinese", StringComparison.OrdinalIgnoreCase) || _uiLanguage.Value == "中文";
+        internal bool IsChineseUi
+        {
+            get
+            {
+                var ui = _uiLanguage != null ? (_uiLanguage.Value ?? string.Empty).Trim() : string.Empty;
+                if (string.Equals(ui, "Chinese", StringComparison.OrdinalIgnoreCase) || ui == "中文") return true;
+                if (string.Equals(ui, "English", StringComparison.OrdinalIgnoreCase)) return false;
+                if (!string.IsNullOrWhiteSpace(ui)) return IsChineseLanguageId(ui);
+
+                var gameLocale = PlayerPrefs.GetString("locale", "EN");
+                return !string.IsNullOrWhiteSpace(gameLocale) && gameLocale.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+            }
+        }
 
         internal string UiLanguageValue
         {
-            get => IsChineseUi ? "Chinese" : "English";
-            set => _uiLanguage.Value = string.Equals(value, "Chinese", StringComparison.OrdinalIgnoreCase) || value == "中文" ? "Chinese" : "English";
+            get
+            {
+                var ui = _uiLanguage != null ? (_uiLanguage.Value ?? string.Empty).Trim() : string.Empty;
+                if (string.Equals(ui, "Auto", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(ui)) return DefaultUiLanguageValue();
+                return NormalizeUiLanguageValue(ui);
+            }
+            set
+            {
+                if (_uiLanguage == null) return;
+                _uiLanguage.Value = NormalizeUiLanguageValue(value);
+                _advancedConfig?.Save();
+            }
+        }
+
+        internal IReadOnlyList<UiLanguageOption> UiLanguageOptions
+        {
+            get
+            {
+                RefreshUiLanguageOptions(false);
+                return _uiLanguageOptions;
+            }
+        }
+
+        private string NormalizeUiLanguageValue(string value)
+        {
+            var requested = (value ?? string.Empty).Trim();
+            if (string.Equals(requested, "Auto", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(requested)) return DefaultUiLanguageValue();
+            if (string.Equals(requested, "Chinese", StringComparison.OrdinalIgnoreCase) || requested == "中文") return "zh-CN";
+            if (string.Equals(requested, "English", StringComparison.OrdinalIgnoreCase)) return "English";
+
+            RefreshUiLanguageOptions(false);
+            for (var i = 0; i < _uiLanguageOptions.Count; i++)
+            {
+                var option = _uiLanguageOptions[i];
+                if (string.Equals(option.Id, requested, StringComparison.OrdinalIgnoreCase) || string.Equals(option.Name, requested, StringComparison.OrdinalIgnoreCase)) return option.Id;
+            }
+
+            return requested;
+        }
+
+        private string DefaultUiLanguageValue()
+        {
+            RefreshUiLanguageOptions(false);
+            var gameLocale = PlayerPrefs.GetString("locale", string.Empty);
+            if (!string.IsNullOrWhiteSpace(gameLocale))
+            {
+                for (var i = 0; i < _uiLanguageOptions.Count; i++)
+                    if (string.Equals(_uiLanguageOptions[i].Id, gameLocale, StringComparison.OrdinalIgnoreCase)) return _uiLanguageOptions[i].Id;
+            }
+
+            return IsChineseLanguageId(gameLocale) ? "zh-CN" : "English";
+        }
+
+        private bool IsChineseLanguageId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            var id = value.Trim();
+            if (id.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) return true;
+            RefreshUiLanguageOptions(false);
+            for (var i = 0; i < _uiLanguageOptions.Count; i++)
+            {
+                var option = _uiLanguageOptions[i];
+                if (!string.Equals(option.Id, id, StringComparison.OrdinalIgnoreCase) && !string.Equals(option.Name, id, StringComparison.OrdinalIgnoreCase)) continue;
+                return option.Id.StartsWith("zh", StringComparison.OrdinalIgnoreCase) || option.Name.IndexOf("中文", StringComparison.OrdinalIgnoreCase) >= 0 || option.Name.IndexOf("Chinese", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            return false;
+        }
+
+        private void RefreshUiLanguageOptions(bool force)
+        {
+            if (!force && _uiLanguageOptions.Count > 0 && Time.realtimeSinceStartup < _nextLanguageScanTime) return;
+            _nextLanguageScanTime = Time.realtimeSinceStartup + 5f;
+            _uiLanguageOptions.Clear();
+
+            ScanLanguageDirectory(Path.Combine(Paths.GameRootPath, "CasualtiesUnknown_Data", "Lang"));
+        }
+
+        private void ScanLanguageDirectory(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
+            try
+            {
+                var files = Directory.GetFiles(directory, "*.json", SearchOption.TopDirectoryOnly);
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                for (var i = 0; i < files.Length; i++) AddLanguageFile(files[i]);
+            }
+            catch (Exception ex)
+            {
+                if (_debugLog != null && _debugLog.Value) _log.LogWarning("Failed to scan language directory " + directory + ": " + ex.Message);
+            }
+        }
+
+        private void AddLanguageFile(string path)
+        {
+            try
+            {
+                var json = File.ReadAllText(path);
+                var name = ExtractJsonString(json, "name");
+                if (string.IsNullOrWhiteSpace(name)) return;
+                AddUiLanguageOption(Path.GetFileNameWithoutExtension(path), name.Trim());
+            }
+            catch (Exception ex)
+            {
+                if (_debugLog != null && _debugLog.Value) _log.LogWarning("Failed to read language file " + path + ": " + ex.Message);
+            }
+        }
+
+        private void AddUiLanguageOption(string id, string name)
+        {
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) return;
+            for (var i = 0; i < _uiLanguageOptions.Count; i++)
+                if (string.Equals(_uiLanguageOptions[i].Id, id, StringComparison.OrdinalIgnoreCase) || string.Equals(_uiLanguageOptions[i].Name, name, StringComparison.OrdinalIgnoreCase)) return;
+            _uiLanguageOptions.Add(new UiLanguageOption(id, name));
+        }
+
+        private static string ExtractJsonString(string json, string propertyName)
+        {
+            if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(propertyName)) return string.Empty;
+            var match = Regex.Match(json, "\\\"" + Regex.Escape(propertyName) + "\\\"\\s*:\\s*\\\"(?<value>(?:\\\\.|[^\\\"])*)\\\"", RegexOptions.CultureInvariant);
+            return match.Success ? Regex.Unescape(match.Groups["value"].Value) : string.Empty;
+        }
+
+        private string TranslateGameKey(string key)
+        {
+            key = (key ?? string.Empty).Trim();
+            if (key.Length == 0) return string.Empty;
+
+            var languageId = UiLanguageValue;
+            var language = LoadGameLanguage(languageId);
+            if (language != null && language.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)) return value;
+
+            return string.Empty;
+        }
+
+        private Dictionary<string, string> LoadGameLanguage(string languageId)
+        {
+            languageId = (languageId ?? string.Empty).Trim();
+            if (languageId.Length == 0) return null;
+            if (_gameLanguageCache.TryGetValue(languageId, out var cached)) return cached;
+
+            var path = Path.Combine(Paths.GameRootPath, "CasualtiesUnknown_Data", "Lang", languageId + ".json");
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (File.Exists(path)) ParseJsonStringPairs(File.ReadAllText(path), result);
+            }
+            catch (Exception ex)
+            {
+                if (_debugLog != null && _debugLog.Value) _log.LogWarning("Failed to load game language file " + path + ": " + ex.Message);
+            }
+
+            _gameLanguageCache[languageId] = result;
+            return result;
+        }
+
+        private static void ParseJsonStringPairs(string json, Dictionary<string, string> result)
+        {
+            if (string.IsNullOrEmpty(json) || result == null) return;
+            var matches = Regex.Matches(json, "\\\"(?<key>(?:\\\\.|[^\\\"])*)\\\"\\s*:\\s*\\\"(?<value>(?:\\\\.|[^\\\"])*)\\\"", RegexOptions.CultureInvariant);
+            for (var i = 0; i < matches.Count; i++)
+            {
+                var key = Regex.Unescape(matches[i].Groups["key"].Value);
+                var value = Regex.Unescape(matches[i].Groups["value"].Value);
+                if (!string.IsNullOrWhiteSpace(key) && !result.ContainsKey(key)) result.Add(key, value);
+            }
         }
 
         internal string T(string english, string chinese)
@@ -861,6 +1125,18 @@ namespace DGLab.BepInEx
             Wave
         }
 
+        internal struct UiLanguageOption
+        {
+            public readonly string Id;
+            public readonly string Name;
+
+            public UiLanguageOption(string id, string name)
+            {
+                Id = id;
+                Name = name;
+            }
+        }
+
         private string FormatConditionsText(string raw)
         {
             raw = string.IsNullOrWhiteSpace(raw) ? "none" : raw.Trim();
@@ -938,6 +1214,8 @@ namespace DGLab.BepInEx
         {
             key = string.IsNullOrWhiteSpace(key) ? "none" : key.Trim();
             var normalized = key.ToLowerInvariant();
+            var translated = TranslateGameKey(normalized);
+            if (!string.IsNullOrWhiteSpace(translated)) return translated;
             switch (normalized)
             {
                 case "idle": return T("Idle", "待机");
@@ -961,6 +1239,7 @@ namespace DGLab.BepInEx
                 case "trauma": return T("Trauma", "创伤");
                 case "body-shock": return T("Shock", "休克");
                 case "body-consciousness": return T("Consciousness drop", "意识下降");
+                case "unconscious": return T("Unconscious", "昏迷");
                 case "upper-pain": return T("Upper body pain", "上半身疼痛");
                 case "lower-pain": return T("Lower body pain", "下半身疼痛");
                 case "condition": return T("Body condition", "身体状态");
@@ -1063,7 +1342,12 @@ namespace DGLab.BepInEx
         internal bool ConditionMixerEnabledValue
         {
             get => _enableConditionMixer.Value;
-            set => _enableConditionMixer.Value = value;
+            set
+            {
+                if (_enableConditionMixer.Value == value) return;
+                _enableConditionMixer.Value = value;
+                if (!value) ClearConditionMixerOutput("condition-disabled");
+            }
         }
 
         internal int StrengthAValue
@@ -1076,6 +1360,16 @@ namespace DGLab.BepInEx
         {
             get => _strengthB.Value;
             set => _strengthB.Value = value;
+        }
+
+        internal int UnconsciousRecoverySecondsValue
+        {
+            get => _unconsciousRecoverySeconds != null ? _unconsciousRecoverySeconds.Value : 0;
+            set
+            {
+                if (_unconsciousRecoverySeconds == null) return;
+                _unconsciousRecoverySeconds.Value = Mathf.Clamp(value, 0, 30);
+            }
         }
 
         internal void SetMenuOpenFromWindow(bool isOpen)
@@ -1647,6 +1941,7 @@ namespace DGLab.BepInEx
             _lastObservedConsciousness = 100f;
             _lastObservedBody = null;
             _bodyObservationBaselineReady = false;
+            if (!string.Equals(reason, "unconscious", StringComparison.OrdinalIgnoreCase)) _wasUnconscious = false;
             _log.LogInfo("DG-Lab cleared runtime output because no active gameplay body is available: " + reason + ".");
         }
 
@@ -1661,6 +1956,24 @@ namespace DGLab.BepInEx
             if (ValidBodyPercent(body.bloodOxygen, 100f) <= 88f) return true;
             if (body.painShock > 0.08f) return true;
             return body.inCardiacArrest;
+        }
+
+        private static bool IsUnconscious(Body body)
+        {
+            if (body == null) return true;
+            if (!body.conscious) return true;
+            return body.consciousness < 20f;
+        }
+
+        private void TickUnconsciousRecovery(Body body)
+        {
+            if (body == null) return;
+            var unconscious = IsUnconscious(body);
+            if (_wasUnconscious && !unconscious && _unconsciousRecoverySeconds != null && _unconsciousRecoverySeconds.Value > 0)
+            {
+                _strengthEnvelope?.BeginRecovery(_unconsciousRecoverySeconds.Value, "unconscious-recover");
+            }
+            _wasUnconscious = unconscious;
         }
 
         private static float ValidBodyPercent(float value, float fallback)
