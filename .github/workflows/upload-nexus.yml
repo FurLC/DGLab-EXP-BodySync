@@ -1,0 +1,79 @@
+name: Upload Release to Nexus Mods
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub release tag to upload, for example v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upload-nexus:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.event.release.tag_name }}"
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download release package
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ steps.release.outputs.tag }}
+          fileName: "*.zip"
+          out-file-path: dist
+
+      - name: Find release package
+        id: package
+        shell: bash
+        run: |
+          file="$(find dist -maxdepth 1 -type f -name '*.zip' | sort | head -n 1)"
+          if [ -z "$file" ]; then
+            echo "No .zip release package found." >&2
+            exit 1
+          fi
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$file")" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release view "${{ steps.release.outputs.tag }}" --repo "${{ github.repository }}" --json body --jq .body > dist/release-notes.txt
+          {
+            echo 'body<<EOF'
+            cat dist/release-notes.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@main
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_group_id: ${{ secrets.NEXUSMODS_FILE_GROUP_ID }}
+          filename: ${{ steps.package.outputs.file }}
+          version: ${{ steps.release.outputs.version }}
+          display_name: DGLab EXP BodySync ${{ steps.release.outputs.version }}
+          description: ${{ steps.notes.outputs.body }}
+          file_category: main
+          archive_existing_file: false
+          allow_mod_manager_download: true
+          primary_mod_manager_download: true
