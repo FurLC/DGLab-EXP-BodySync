@@ -33,6 +33,7 @@ namespace DGLab.BepInEx.Network
 
         public string ClientId => _terminalId;
         public string TargetId => _bound ? _targetId : string.Empty;
+        public bool IsConnected => _listener != null;
 
         public DGLabEmbeddedWebSocketServer(string bindAddress, int port, string terminalId)
         {
@@ -340,14 +341,6 @@ namespace DGLab.BepInEx.Network
                    StringEquals(msg.type, "heartbeat") ||
                    StringEquals(msg.message, "ping") ||
                    StringEquals(msg.message, "heartbeat");
-        }
-
-        private string ResolveAppTargetId(DGLabMessage msg)
-        {
-            if (!string.IsNullOrWhiteSpace(msg.clientId) && !StringEquals(msg.clientId, ClientId)) return msg.clientId.Trim();
-            if (!string.IsNullOrWhiteSpace(msg.targetId) && !StringEquals(msg.targetId, ClientId)) return msg.targetId.Trim();
-            if (!string.IsNullOrWhiteSpace(msg.message) && !StringEquals(msg.message, "DGLAB") && !StringEquals(msg.message, "bind") && !StringEquals(msg.message, "targetId") && !StringEquals(msg.message, ClientId)) return msg.message.Trim();
-            return string.Empty;
         }
 
         private static bool StringEquals(string left, string right)

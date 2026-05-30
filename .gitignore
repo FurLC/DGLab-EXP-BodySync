@@ -29,6 +29,8 @@ releases/
 dist/
 artifacts/
 publish/
+package.sh
+package.cmd
 
 # Game and Unity reference binaries
 **/Assembly-CSharp.dll

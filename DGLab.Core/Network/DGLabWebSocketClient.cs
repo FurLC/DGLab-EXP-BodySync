@@ -22,6 +22,15 @@ namespace DGLab.BepInEx.Network
         private volatile string _targetId;
         public string ClientId => _clientId;
         public string TargetId => _targetId;
+        public bool IsConnected
+        {
+            get
+            {
+                WebSocket socket;
+                lock (_socketLock) { socket = _socket; }
+                return socket != null && socket.ReadyState == WebSocketState.Open;
+            }
+        }
 
         public DGLabWebSocketClient(string serverUrl)
         {
@@ -41,9 +50,22 @@ namespace DGLab.BepInEx.Network
                 _socket = socket;
             }
 
-            socket.OnOpen += (_, __) => OnConnected?.Invoke();
-            socket.OnClose += (_, e) => OnClosed?.Invoke(e.Reason);
-            socket.OnError += (_, e) => OnError?.Invoke(e.Exception ?? new Exception(e.Message));
+            socket.OnOpen += (_, __) =>
+            {
+                if (!IsCurrentGeneration(generation)) return;
+                OnConnected?.Invoke();
+            };
+            socket.OnClose += (_, e) =>
+            {
+                if (!IsCurrentGeneration(generation)) return;
+                ClearBindingState();
+                OnClosed?.Invoke(e.Reason);
+            };
+            socket.OnError += (_, e) =>
+            {
+                if (!IsCurrentGeneration(generation)) return;
+                OnError?.Invoke(e.Exception ?? new Exception(e.Message));
+            };
             socket.OnMessage += (_, e) => HandleMessage(e, generation);
             socket.ConnectAsync();
         }
@@ -57,6 +79,7 @@ namespace DGLab.BepInEx.Network
                 _socket = null;
                 _connectionGeneration++;
             }
+            ClearBindingState();
             if (socket == null) return;
             try { socket.CloseAsync(); } catch { }
         }
@@ -113,10 +136,7 @@ namespace DGLab.BepInEx.Network
         {
             if (!e.IsText) return;
 
-            lock (_socketLock)
-            {
-                if (generation != _connectionGeneration) return;
-            }
+            if (!IsCurrentGeneration(generation)) return;
 
             var payload = e.Data;
             OnRawMessage?.Invoke(payload);
@@ -134,6 +154,20 @@ namespace DGLab.BepInEx.Network
             {
                 OnError?.Invoke(ex);
             }
+        }
+
+        private bool IsCurrentGeneration(int generation)
+        {
+            lock (_socketLock)
+            {
+                return generation == _connectionGeneration;
+            }
+        }
+
+        private void ClearBindingState()
+        {
+            _clientId = null;
+            _targetId = null;
         }
 
         private static string NormalizeWavePayload(string channel, string wavePayload)

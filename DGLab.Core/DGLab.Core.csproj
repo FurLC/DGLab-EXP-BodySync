@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="InTheHand.BluetoothLE" Version="4.0.44" />
+
     <Reference Include="Newtonsoft.Json">
       <HintPath>..\BepInExPlugin\lib\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>

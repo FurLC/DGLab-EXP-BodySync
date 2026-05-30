@@ -7,6 +7,7 @@ namespace DGLab.BepInEx.Network
     {
         string ClientId { get; }
         string TargetId { get; }
+        bool IsConnected { get; }
 
         event Action<string> OnRawMessage;
         event Action<DGLabMessage> OnMessage;

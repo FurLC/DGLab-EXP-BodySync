@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using DGLab.BepInEx.Network;
+using DGLab.BepInEx.Network.Bluetooth;
 using DGLab.BepInEx.Protocol;
 
 namespace DGLab.BepInEx
@@ -10,7 +11,8 @@ namespace DGLab.BepInEx
 
         public string ClientId => _socket.ClientId;
         public string TargetId => _socket.TargetId;
-        public bool HasTarget => !string.IsNullOrEmpty(_socket.TargetId);
+        public bool IsConnected => _socket.IsConnected;
+        public bool HasTarget => _socket.IsConnected && !string.IsNullOrEmpty(_socket.TargetId);
 
         public event System.Action<string> OnRawMessage
         {
@@ -47,9 +49,19 @@ namespace DGLab.BepInEx
             _socket = new DGLabWebSocketClient(serverUrl);
         }
 
+        public DGLabClient(string serverUrl, bool useOtcController)
+        {
+            _socket = useOtcController ? (IDGLabTransport)new DGLabOtcWebSocketClient(serverUrl) : new DGLabWebSocketClient(serverUrl);
+        }
+
         public DGLabClient(string bindAddress, int port, string terminalId)
         {
             _socket = new DGLabEmbeddedWebSocketServer(bindAddress, port, terminalId);
+        }
+
+        public DGLabClient(IBleGattClient ble, DGLabBluetoothProfile profile, string deviceNameOrAddress)
+        {
+            _socket = new DGLabBluetoothTransport(ble, profile, deviceNameOrAddress);
         }
 
         public void Connect()

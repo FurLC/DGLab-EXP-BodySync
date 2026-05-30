@@ -7,6 +7,7 @@ namespace DGLab.BepInEx
         private const int WindowId = 54643321;
         private const float WindowWidth = 600f;
         private const float WindowHeight = 640f;
+        private static readonly GUIContent SharedContent = new GUIContent();
 
         private readonly DGLabPlugin _owner;
         private Rect _windowRect = new Rect(20f, 20f, WindowWidth, WindowHeight);
@@ -37,9 +38,10 @@ namespace DGLab.BepInEx
                 if (_tooltipStyle == null)
                     _tooltipStyle = new GUIStyle(GUI.skin.box) { wordWrap = true, alignment = TextAnchor.UpperLeft, padding = new RectOffset(6, 6, 4, 4) };
                 var mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-                var size = _tooltipStyle.CalcSize(new GUIContent(_tooltip));
+                var tooltipContent = Content(_tooltip);
+                var size = _tooltipStyle.CalcSize(tooltipContent);
                 size.x = Mathf.Min(size.x + 12f, 480f);
-                size.y = _tooltipStyle.CalcHeight(new GUIContent(_tooltip), size.x) + 8f;
+                size.y = _tooltipStyle.CalcHeight(tooltipContent, size.x) + 8f;
                 var tx = Mathf.Clamp(mp.x + 14f, 0f, Screen.width - size.x);
                 var ty = Mathf.Clamp(mp.y + 14f, 0f, Screen.height - size.y);
                 GUI.Box(new Rect(tx, ty, size.x, size.y), _tooltip, _tooltipStyle);
@@ -89,34 +91,68 @@ namespace DGLab.BepInEx
 
             // ── Status ──────────────────────────────────────────────────────
             var isOfficial = _owner.IsOfficialSocketProfile;
-            var showServerInput = _owner.IsThirdPartyControllerProfile;
-            var statusHeight = showServerInput ? 180f : 156f;
-            GUI.Box(new Rect(0f, posY, contentWidth, statusHeight), "");
-            GUI.Label(new Rect(x, posY + 8f, w, row), Section(_owner.T("Status", "状态")));
-            DrawPair(x, posY + 34f, labelWidth, w, _owner.T("Mode", "模式"), _owner.BackendModeText);
-
-            // Profile toggle buttons
-            GUI.Label(new Rect(x, posY + 58f, labelWidth, row), _owner.T("Profile", "类型") + ":");
-            var profileY = posY + 58f;
-            DrawButtonFlow(x + labelWidth, ref profileY, w - labelWidth, row, new[]
+            var isOtc = _owner.IsOtcControllerProfile;
+            var isBluetooth = _owner.IsBluetoothProfile;
+            var profileItems = new[]
             {
                 ButtonLayoutItem.Toggle(_owner.T("Official Socket", "官方 Socket"), isOfficial, () => _owner.SwitchExternalBackendProfile("OfficialSocket")),
-                ButtonLayoutItem.Toggle(_owner.T("Third-Party", "第三方控制器"), !isOfficial, () => _owner.SwitchExternalBackendProfile("ThirdPartyController"))
-            });
+                ButtonLayoutItem.Toggle(_owner.T("OTC Controller", "OTC 控制器"), isOtc, () => _owner.SwitchExternalBackendProfile("OtcController")),
+                ButtonLayoutItem.Toggle(_owner.T("Bluetooth V2", "蓝牙 V2"), _owner.IsBluetoothV2Profile, () => _owner.SwitchExternalBackendProfile("BluetoothV2")),
+                ButtonLayoutItem.Toggle(_owner.T("Bluetooth V3", "蓝牙 V3"), _owner.IsBluetoothV3Profile, () => _owner.SwitchExternalBackendProfile("BluetoothV3"))
+            };
+            var profileFlowHeight = MeasureButtonFlowHeight(w - labelWidth, row, profileItems);
+            var backendStatusHeight = MeasureWrappedLabelHeight(_owner.BackendStatusDetailText, w - labelWidth, row);
+            var bluetoothStatusHeight = isBluetooth ? MeasureWrappedLabelHeight(_owner.BluetoothStatusText, w, row) : 0f;
+            var bleScannerHeight = isBluetooth ? MeasureBleScannerHeight(row) : 0f;
+            var qrSocketHeight = _owner.ShowQrSocketStatus ? row + 4f : 0f;
+            var statusHeight = 8f + row + 4f + row + 4f + backendStatusHeight + 4f + profileFlowHeight + 8f;
+            if (isOtc) statusHeight += row + 4f + row + 8f;
+            if (isBluetooth) statusHeight += row + 4f + bluetoothStatusHeight + 6f + bleScannerHeight + 8f;
+            statusHeight += row + 4f + row + 4f + qrSocketHeight + spacing;
+            GUI.Box(new Rect(0f, posY, contentWidth, statusHeight), "");
+            var statusRowY = posY + 8f;
+            GUI.Label(new Rect(x, statusRowY, w, row), Section(_owner.T("Status", "状态")));
+            statusRowY += row + 4f;
+            DrawPair(x, statusRowY, labelWidth, w, _owner.T("Mode", "模式"), _owner.BackendModeText);
+            statusRowY += row + 4f;
+            GUI.Label(new Rect(x, statusRowY, labelWidth, row), _owner.T("State", "状态") + ":");
+            DrawWrappedLabel(new Rect(x + labelWidth, statusRowY, w - labelWidth, backendStatusHeight), _owner.BackendStatusDetailText);
+            statusRowY += backendStatusHeight + 4f;
 
-            var statusRowY = posY + 82f;
-            if (showServerInput)
+            // Profile toggle buttons
+            GUI.Label(new Rect(x, statusRowY, labelWidth, row), _owner.T("Profile", "类型") + ":");
+            var profileY = statusRowY;
+            DrawButtonFlow(x + labelWidth, ref profileY, w - labelWidth, row, profileItems);
+
+            statusRowY = profileY + 8f;
+            if (isOtc)
             {
-                GUI.Label(new Rect(x, statusRowY, labelWidth, row), _owner.T("Server", "服务器") + ":");
-                _owner.ThirdPartyControllerUrlValue = GUI.TextField(new Rect(x + labelWidth, statusRowY, w - labelWidth, row), _owner.ThirdPartyControllerUrlValue);
-                statusRowY += 24f;
+                GUI.Label(new Rect(x, statusRowY, labelWidth, row), _owner.T("OTC IP", "OTC IP") + ":");
+                _owner.OtcControllerIpValue = GUI.TextField(new Rect(x + labelWidth, statusRowY, w - labelWidth, row), _owner.OtcControllerIpValue);
+                statusRowY += row + 4f;
+                DrawWrappedLabel(new Rect(x + labelWidth, statusRowY, w - labelWidth, row), _owner.T("Port/path are fixed: 60536/1", "端口和路径固定：60536/1"));
+                statusRowY += row + 8f;
+            }
+
+            if (isBluetooth)
+            {
+                GUI.Label(new Rect(x, statusRowY, labelWidth, row), _owner.T("BLE Device", "蓝牙设备") + ":");
+                _owner.BluetoothDeviceNameValue = GUI.TextField(new Rect(x + labelWidth, statusRowY, w - labelWidth, row), _owner.BluetoothDeviceNameValue);
+                statusRowY += row + 4f;
+                DrawWrappedLabel(new Rect(x, statusRowY, w, bluetoothStatusHeight), _owner.BluetoothStatusText);
+                statusRowY += bluetoothStatusHeight + 6f;
+                DrawBleScanner(x, ref statusRowY, w, row);
+                statusRowY += 8f;
             }
 
             DrawPair(x, statusRowY, labelWidth, w, _owner.T("Client ID", "终端ID"), _owner.ClientIdText);
-            statusRowY += 24f;
+            statusRowY += row + 4f;
             DrawPair(x, statusRowY, labelWidth, w, _owner.T("Target ID", "设备ID"), _owner.TargetIdText);
-            statusRowY += 24f;
-            DrawPair(x, statusRowY, labelWidth, w, _owner.T("QR Socket", "二维码地址"), _owner.QrWebSocketUrlText);
+            statusRowY += row + 4f;
+            if (_owner.ShowQrSocketStatus)
+            {
+                DrawPair(x, statusRowY, labelWidth, w, _owner.T("QR Socket", "二维码地址"), _owner.QrWebSocketUrlText);
+            }
             posY += statusHeight + 10f;
 
             if (_owner.ShowQrPanel)
@@ -149,18 +185,7 @@ namespace DGLab.BepInEx
 
             // ── Actions ─────────────────────────────────────────────────────
             var boxY = y;
-            var actionItems = _owner.ShowQrPanel
-                ? new[]
-                {
-                    ButtonLayoutItem.Action(_owner.T("Restart Backend", "重启后端"), _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。"), () => _owner.ReconnectFromMenu()),
-                    ButtonLayoutItem.Action(_owner.T("Refresh QR", "刷新二维码"), _owner.T("Regenerate the QR code image.", "重新生成二维码图片。"), () => _owner.EnsureConnectedForQrFromMenu(), _owner.IsBackendConnected),
-                    ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu())
-                }
-                : new[]
-                {
-                    ButtonLayoutItem.Action(_owner.T("Restart Backend", "重启后端"), _owner.T("Reconnect to the backend. Clears cached LAN IP.", "重连后端，同时清除缓存的局域网 IP。"), () => _owner.ReconnectFromMenu()),
-                    ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu())
-                };
+            var actionItems = BuildActionItems();
             var actionRowsHeight = MeasureButtonFlowHeight(innerWidth - spacing * 2f, row, actionItems);
             var actionsBoxHeight = Mathf.Max(84f, 36f + actionRowsHeight + spacing);
             GUI.Box(new Rect(0f, boxY, innerWidth, actionsBoxHeight), "");
@@ -301,12 +326,74 @@ namespace DGLab.BepInEx
 
         private static bool TooltipButton(Rect rect, string label, string tooltip)
         {
-            return GUI.Button(rect, new GUIContent(label, tooltip));
+            return string.IsNullOrEmpty(tooltip)
+                ? GUI.Button(rect, label)
+                : GUI.Button(rect, new GUIContent(label, tooltip));
         }
 
         private static bool TooltipToggle(Rect rect, bool value, string label, string tooltip)
         {
             return GUI.Toggle(rect, value, new GUIContent(label, tooltip));
+        }
+
+        private ButtonLayoutItem[] BuildActionItems()
+        {
+            var connected = _owner.IsBackendConnected;
+            if (_owner.ShowQrPanel)
+            {
+                if (connected)
+                {
+                    return new[]
+                    {
+                        ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu()),
+                        ButtonLayoutItem.Action(_owner.T("Refresh ID / QR", "刷新 ID/二维码"), _owner.T("Generate a new Socket ID and QR code. Scan it again in the DG-Lab app.", "生成新的 Socket ID 和二维码。请在 DG-Lab App 中重新扫码。"), () => _owner.RefreshOfficialSocketIdFromMenu())
+                    };
+                }
+
+                return new[]
+                {
+                    ButtonLayoutItem.Action(_owner.T("Refresh ID / QR", "刷新 ID/二维码"), _owner.T("Generate a new Socket ID and QR code. Scan it in the DG-Lab app to connect.", "生成新的 Socket ID 和二维码。请在 DG-Lab App 中扫码连接。"), () => _owner.RefreshOfficialSocketIdFromMenu())
+                };
+            }
+
+            var connectToggle = connected
+                ? ButtonLayoutItem.Action(_owner.T("Disconnect", "断开"), _owner.T("Disconnect the current device connection.", "断开当前设备连接。"), () => _owner.DisconnectFromMenu())
+                : ButtonLayoutItem.Action(_owner.T("Connect", "连接"), _owner.T("Connect to the selected backend.", "连接当前选择的后端。"), () => _owner.ConnectFromMenu());
+
+            return new[]
+            {
+                connectToggle,
+                ButtonLayoutItem.Action(_owner.T("Reconnect", "重连"), _owner.T("Reconnect to the selected backend.", "重新连接当前选择的后端。"), () => _owner.ReconnectFromMenu())
+            };
+        }
+
+        private float MeasureBleScannerHeight(float row)
+        {
+            return row + 4f + Mathf.Min(4, _owner.BleDeviceOptions.Count) * (row + 2f);
+        }
+
+        private void DrawBleScanner(float x, ref float y, float width, float row)
+        {
+            var buttonWidth = 108f;
+            GUI.enabled = !_owner.BleScanInProgress;
+            if (GUI.Button(new Rect(x, y, buttonWidth, row), _owner.BleScanInProgress ? _owner.T("Scanning...", "扫描中...") : _owner.T("Scan BLE", "扫描蓝牙")))
+            {
+                _owner.StartBleScanFromMenu();
+            }
+            GUI.enabled = true;
+            DrawWrappedLabel(new Rect(x + buttonWidth + 8f, y, width - buttonWidth - 8f, row), _owner.BleScanStatusText);
+            y += row + 4f;
+
+            var devices = _owner.BleDeviceOptions;
+            var rows = Mathf.Min(4, devices.Count);
+            for (var i = 0; i < rows; i++)
+            {
+                var device = devices[i];
+                var selected = string.Equals(_owner.BluetoothDeviceNameValue, device.Id, System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(_owner.BluetoothDeviceNameValue, device.Name, System.StringComparison.OrdinalIgnoreCase);
+                if (DrawActionToggleButton(new Rect(x, y, width, row), device.DisplayName, selected)) _owner.SelectBleDevice(device);
+                y += row + 2f;
+            }
         }
 
         private float DrawLanguageButtons(Rect rect)
@@ -619,7 +706,7 @@ namespace DGLab.BepInEx
                 var rect = new Rect(cursorX, y, Mathf.Min(buttonWidth, x + width - cursorX), row);
                 var wasEnabled = GUI.enabled;
                 GUI.enabled = wasEnabled && item.Enabled;
-                var clicked = item.IsToggle ? DrawToggleButton(rect, item.Label, item.Active) : GUI.Button(rect, new GUIContent(item.Label, item.Tooltip));
+                var clicked = item.IsToggle ? DrawToggleButton(rect, item.Label, item.Active) : TooltipButton(rect, item.Label, item.Tooltip);
                 GUI.enabled = wasEnabled;
                 if (clicked) item.OnClick?.Invoke();
                 cursorX += rect.width + gap;
@@ -650,7 +737,15 @@ namespace DGLab.BepInEx
 
         private static float CalcButtonWidth(string label, float min, float max)
         {
-            return Mathf.Clamp(GUI.skin.button.CalcSize(new GUIContent(label ?? string.Empty)).x + 18f, min, max);
+            return Mathf.Clamp(GUI.skin.button.CalcSize(Content(label ?? string.Empty)).x + 18f, min, max);
+        }
+
+        private static GUIContent Content(string text)
+        {
+            SharedContent.text = text ?? string.Empty;
+            SharedContent.tooltip = string.Empty;
+            SharedContent.image = null;
+            return SharedContent;
         }
 
         private struct ButtonLayoutItem

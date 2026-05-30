@@ -24,7 +24,8 @@ namespace DGLab.BepInEx
         private ConfigEntry<string> _serverUrl;
         private ConfigEntry<string> _externalBackendProfile;
         private ConfigEntry<string> _officialSocketUrl;
-        private ConfigEntry<string> _thirdPartyControllerUrl;
+        private ConfigEntry<string> _otcControllerUrl;
+        private ConfigEntry<string> _bluetoothDeviceName;
         private ConfigEntry<string> _qrWebSocketUrl;
         private ConfigEntry<bool> _enableQrOutput;
         private ConfigEntry<bool> _enableMenu;
@@ -94,13 +95,16 @@ namespace DGLab.BepInEx
             _embeddedTerminalId = Config.Bind("Network", "EmbeddedTerminalId", "", Text("Terminal ID used in the embedded QR path. Usually regenerated when the backend starts.", "内置二维码路径使用的终端 ID，通常在后端启动时重新生成。"));
             _refreshEmbeddedTerminalIdOnStart = Config.Bind("Network", "RefreshEmbeddedTerminalIdOnStart", true, Text("Generate a new embedded terminal ID whenever the embedded backend starts or restarts.", "每次内置后端启动或重启时生成新的终端 ID。"));
             _invalidateQrOnDisconnect = Config.Bind("Network", "InvalidateQrOnDisconnect", true, Text("Generate a new embedded terminal ID when the phone disconnects, invalidating old QR codes.", "手机断开时生成新的终端 ID，使旧二维码失效。"));
-            _serverUrl = Config.Bind("Network", "ServerUrl", "ws://127.0.0.1:9999", Text("Legacy external backend URL (kept for compatibility). Prefer OfficialSocketUrl or ThirdPartyControllerUrl.", "兼容旧版的外部后端地址。建议改用 OfficialSocketUrl 或 ThirdPartyControllerUrl。"));
-            _externalBackendProfile = Config.Bind("Network", "ExternalBackendProfile", "ThirdPartyController", Text("External backend profile: OfficialSocket or ThirdPartyController.", "外部后端类型：OfficialSocket 或 ThirdPartyController。"));
+            _serverUrl = Config.Bind("Network", "ServerUrl", "ws://127.0.0.1:9999", Text("Legacy external backend URL (kept for compatibility). Prefer OfficialSocketUrl or OtcControllerUrl.", "兼容旧版的外部后端地址。建议改用 OfficialSocketUrl 或 OtcControllerUrl。"));
+            _externalBackendProfile = Config.Bind("Network", "ExternalBackendProfile", "OfficialSocket", Text("External backend profile: OfficialSocket, OtcController, BluetoothV2, or BluetoothV3.", "外部后端类型：OfficialSocket、OtcController、BluetoothV2 或 BluetoothV3。"));
             _officialSocketUrl = Config.Bind("Network", "OfficialSocketUrl", "", Text("Official DG-Lab Socket backend URL. Used when ExternalBackendProfile is OfficialSocket.", "官方 DG-Lab Socket 后端地址。ExternalBackendProfile 为 OfficialSocket 时使用。"));
-            _thirdPartyControllerUrl = Config.Bind("Network", "ThirdPartyControllerUrl", "ws://127.0.0.1:9999", Text("Third-party controller backend URL. Used when ExternalBackendProfile is ThirdPartyController.", "第三方控制器后端地址。ExternalBackendProfile 为 ThirdPartyController 时使用。"));
+            _otcControllerUrl = Config.Bind("Network", "OtcControllerUrl", "ws://127.0.0.1:60536/1", Text("OpenDGLAB Controller (OTC) target. The menu accepts IP only and stores ws://<ip>:60536/1 here.", "OpenDGLAB Controller (OTC) 目标。菜单中只需输入 IP，并在此保存为 ws://<ip>:60536/1。"));
+            _bluetoothDeviceName = Config.Bind("Network", "BluetoothDeviceName", "", Text("DG-Lab Bluetooth device name or ID selected from the BLE scan list. V2 commonly starts with D-LAB; V3 commonly starts with 47.", "从 BLE 扫描列表选择的 DG-Lab 蓝牙设备名或 ID。V2 常以 D-LAB 开头；V3 常以 47 开头。"));
             _qrWebSocketUrl = Config.Bind("Network", "QrWebSocketUrl", "", Text("Optional WebSocket URL embedded in the DG-Lab scan QR. Leave empty to use the active backend URL.", "可选：写入 DG-Lab 扫码二维码的 WebSocket 地址。留空时使用当前后端地址。"));
             _enableQrOutput = Config.Bind("Network", "EnableQrOutput", true, Text("Generate a local QR PNG whenever the scan URL is available or changes.", "扫码地址可用或变化时生成本地二维码 PNG。"));
             _enableMenu = Config.Bind("UI", "EnableMenu", true, Text("Enable the in-game IMGUI control menu, output monitor, and wave viewer.", "启用游戏内 IMGUI 控制菜单、输出监视器和波形查看器。"));
+
+            MigrateExternalBackendConfig();
 
             _advancedConfigPath = Path.Combine(Paths.ConfigPath, AdvancedConfigFileName);
             MigrateLegacyAdvancedConfig(_advancedConfigPath);
@@ -150,6 +154,21 @@ namespace DGLab.BepInEx
             if (File.Exists(currentPath) || !File.Exists(legacyPath)) return;
 
             File.Copy(legacyPath, currentPath, overwrite: false);
+        }
+
+        private void MigrateExternalBackendConfig()
+        {
+            var profile = (_externalBackendProfile.Value ?? string.Empty).Trim();
+            if (profile.Equals("ThirdPartyController", StringComparison.OrdinalIgnoreCase))
+            {
+                _externalBackendProfile.Value = "OtcController";
+            }
+
+            var legacyUrl = Config.Bind("Network", "ThirdPartyControllerUrl", "", Text("Legacy third-party controller URL migrated to OtcControllerUrl.", "旧版第三方控制器地址，已迁移到 OtcControllerUrl。"));
+            if (!string.IsNullOrWhiteSpace(legacyUrl.Value) && string.IsNullOrWhiteSpace(_otcControllerUrl.Value))
+            {
+                _otcControllerUrl.Value = legacyUrl.Value.Trim();
+            }
         }
 
         private void BindWaveConfig()
@@ -205,7 +224,12 @@ namespace DGLab.BepInEx
                 "temperature",
                 "exertion",
                 "tired",
+                "mood",
                 "panic",
+                "wet",
+                "dirty",
+                "low-immunity",
+                "consciousness",
                 "nerve",
                 "trauma",
                 "pain-shock",
@@ -270,7 +294,12 @@ namespace DGLab.BepInEx
                 case "temperature": return "temperature";
                 case "exertion": return "exertion";
                 case "tired": return "tired";
+                case "mood": return "depressed mood";
                 case "panic": return "panic";
+                case "wet": return "wetness";
+                case "dirty": return "dirtyness";
+                case "low-immunity": return "low immunity";
+                case "consciousness": return "low consciousness / faintness";
                 case "nerve": return "neurological";
                 case "trauma": return "trauma";
                 case "pain-shock": return "pain shock";
@@ -288,7 +317,7 @@ namespace DGLab.BepInEx
                 case "fracture": return "骨折";
                 case "dislocation": return "脱臼";
                 case "bleeding": return "出血";
-                case "blood-loss": return "失血/低血容量";
+                case "blood-loss": return "失血";
                 case "hypotension": return "低血压";
                 case "hypertension": return "高血压";
                 case "internal-bleeding": return "内出血";
@@ -304,7 +333,12 @@ namespace DGLab.BepInEx
                 case "temperature": return "体温异常";
                 case "exertion": return "劳累";
                 case "tired": return "疲倦";
+                case "mood": return "情绪低落";
                 case "panic": return "恐惧";
+                case "wet": return "潮湿";
+                case "dirty": return "脏污";
+                case "low-immunity": return "免疫力低下";
+                case "consciousness": return "意识下降/昏厥风险";
                 case "nerve": return "神经功能";
                 case "trauma": return "创伤";
                 case "pain-shock": return "疼痛性休克";
@@ -329,9 +363,16 @@ namespace DGLab.BepInEx
 
         internal string ConditionDisplayName(string key)
         {
+            key = (key ?? string.Empty).Trim();
+            var cacheKey = UiLanguageValue + "|" + key;
+            if (_conditionDisplayNameCache.TryGetValue(cacheKey, out var cached)) return cached;
+
             var translated = TranslateGameKey(key);
-            if (!string.IsNullOrWhiteSpace(translated)) return translated;
-            return T(ConditionLabelEnglish(key), ConditionLabelChinese(key));
+            var result = !string.IsNullOrWhiteSpace(translated)
+                ? translated
+                : T(ConditionLabelEnglish(key), ConditionLabelChinese(key));
+            _conditionDisplayNameCache[cacheKey] = result;
+            return result;
         }
 
         internal bool GetConditionEnabledValue(string key)

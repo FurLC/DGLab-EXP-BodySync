@@ -304,10 +304,13 @@ namespace DGLab.BepInEx
                 rawPainShockSeverity = 0f;
             }
             var traumaSeverity = ThresholdSeverityHigh(ValidPercent(body.traumaAmount, 0f), 25f, 45f, 80f, 100f);
+            var consciousnessSeverity = ThresholdSeverityLow(consciousness, 90f, 72f, 55f, 30f);
+            var brainDamageSeverity = ThresholdSeverityLow(brainHealth, 75f, 50f, 25f, 5f);
+            var strokeSeverity = ThresholdSeverityHigh(ValidPercent(body.strokeAmount, 0f), 20f, 35f, 50f, 70f);
+            var consciousnessScaled = ApplyConditionSeverity("consciousness", consciousnessSeverity);
             var nerveSeverity = WeightedMax(
-                ThresholdSeverityLow(consciousness, 90f, 72f, 55f, 30f),
-                ThresholdSeverityLow(brainHealth, 75f, 50f, 25f, 5f),
-                ThresholdSeverityHigh(ValidPercent(body.strokeAmount, 0f), 20f, 35f, 50f, 70f));
+                ApplyConditionSeverity("nerve", brainDamageSeverity),
+                ApplyConditionSeverity("nerve", strokeSeverity));
             var hypotensionSeverity = body.inCardiacArrest ? 1f : ThresholdSeverityLow(bloodPressure, 110f, 96f, 83f, 60f);
             var hypertensionSeverity = body.inCardiacArrest ? 0f : ThresholdSeverityHigh(bloodPressure, 130f, 145f, 162f, 180f);
             var bloodPressureSeverity = WeightedMax(
@@ -326,11 +329,15 @@ namespace DGLab.BepInEx
                 body.breathing ? ThresholdSeverityLow(respiratoryRate, 90f, 50f, 25f, 5f) : 1f,
                 ThresholdSeverityHigh(ValidPercent(body.fibrillationProgress, 0f), 15f, 50f, 75f, 95f),
                 ThresholdSeverityHigh(ValidPercent(body.hemothorax, 0f), 40f, 55f, 70f, 100f));
+            var infectionRawSeverity = maxLimbInfection / 90f;
+            var sepsisSeverity = ThresholdSeverityHigh(ValidPercent(body.septicShock, 0f), 35f, 60f, 75f, 82.5f);
+            var sicknessSeverity = ThresholdSeverityHigh(ValidPercent(body.sicknessAmount, 0f), 20f, 55f, 85f, 100f);
+            var radiationSeverity = ThresholdSeverityHigh(ValidPercent(body.radiationSickness, 0f), 10f, 30f, 50f, 80f);
             var infectionSeverity = WeightedMax(
-                ApplyConditionSeverity("infection", maxLimbInfection / 90f),
-                ApplyConditionSeverity("sepsis", ThresholdSeverityHigh(ValidPercent(body.septicShock, 0f), 35f, 60f, 75f, 82.5f)),
-                ApplyConditionSeverity("sickness", ThresholdSeverityHigh(ValidPercent(body.sicknessAmount, 0f), 20f, 55f, 85f, 100f)),
-                ApplyConditionSeverity("radiation", ThresholdSeverityHigh(ValidPercent(body.radiationSickness, 0f), 10f, 30f, 50f, 80f)));
+                ApplyConditionSeverity("infection", infectionRawSeverity),
+                ApplyConditionSeverity("sepsis", sepsisSeverity),
+                ApplyConditionSeverity("sickness", sicknessSeverity),
+                ApplyConditionSeverity("radiation", radiationSeverity));
             var hungerSeverity = ThresholdSeverityLow(hunger, 35f, 20f, 10f, 0f);
             var thirstSeverity = WeightedMax(ThresholdSeverityLow(Mathf.Min(thirst, 100f), 35f, 20f, 10f, 0f), ThresholdSeverityHigh(thirst, 120f, 140f, 175f, 200f));
             var exertionSeverity = ThresholdSeverityLow(stamina, 70f, 50f, 35f, 15f);
@@ -350,13 +357,12 @@ namespace DGLab.BepInEx
             var panicSeverity = body.horrifiedLevel / 85f;
             var wetnessSeverity = ValidPercent(body.wetness, 0f) / 100f;
             var dirtSeverity = ValidPercent(body.dirtyness, 0f) / 100f;
-            var radiationSeverity = ThresholdSeverityHigh(ValidPercent(body.radiationSickness, 0f), 10f, 30f, 50f, 80f);
-            var sicknessSeverity = ThresholdSeverityHigh(ValidPercent(body.sicknessAmount, 0f), 20f, 55f, 85f, 100f);
-            var septicSeverity = ThresholdSeverityHigh(ValidPercent(body.septicShock, 0f), 35f, 60f, 75f, 82.5f);
             var internalBleedingSeverity = WeightedMax(ThresholdSeverityHigh(ValidPercent(body.internalBleeding, 0f), 5f, 25f, 50f, 80f), ThresholdSeverityHigh(ValidPercent(body.hemothorax, 0f), 40f, 55f, 70f, 100f));
             var arrhythmiaSeverity = WeightedMax(ThresholdSeverityHigh(ValidPercent(body.fibrillationProgress, 0f), 15f, 50f, 75f, 95f), body.heartRate > 240f ? 1f : 0f, ThresholdSeverityHigh(body.heartRate > 0f ? body.heartRate : 70f, 160f, 200f, 240f, 260f));
             var cardiacArrestSeverity = body.inCardiacArrest ? 1f : 0f;
             var immunitySeverity = (50f - ValidPercent(body.immunity, 100f)) / 50f;
+            var perfusionSeverity = WeightedMax(bloodVolumeSeverity, hypotensionSeverity, oxygenSeverity, cardiacArrestSeverity);
+            var severeInjuryEvidence = WeightedMax(painCap, traumaSeverity, bleedingSeverity, internalBleedingSeverity, cardiacArrestSeverity);
             var mitigation = ComputePositiveMitigation(body);
             var traumaScaled = ApplyConditionSeverity("trauma", traumaSeverity);
             var bleedingScaled = ApplyConditionSeverity("bleeding", bleedingSeverity);
@@ -365,6 +371,10 @@ namespace DGLab.BepInEx
             var internalBleedScaled = ApplyConditionSeverity("internal-bleeding", internalBleedingSeverity);
             var cardiacArrestScaled = ApplyConditionSeverity("cardiac-arrest", cardiacArrestSeverity);
             var nerveScaled = ApplyConditionSeverity("nerve", nerveSeverity);
+            var moodScaled = ApplyConditionSeverity("mood", moodSeverity);
+            var wetnessScaled = ApplyConditionSeverity("wet", wetnessSeverity);
+            var dirtScaled = ApplyConditionSeverity("dirty", dirtSeverity);
+            var immunityScaled = ApplyConditionSeverity("low-immunity", immunitySeverity);
 
             var shockEvidence = WeightedMax(
                 painCap,
@@ -383,23 +393,30 @@ namespace DGLab.BepInEx
             Add(PainConditionKey(painSeverity), painSeverity, SelectPainWave(painSeverity), 0.12f, "pain");
             Add("injury", Mathf.Max(maxLimbInjury / 100f, brokenOrDislocated), brokenOrDislocated > 0f ? DGLabWaveLibrary.FractureThrob : DGLabWaveLibrary.InjuryAche, 0.25f, "injury");
             Add(BleedingConditionKey(bleedingSeverity), bleedingSeverity, SelectBleedingWave(bleedingSeverity), 0.12f, "bleeding");
-            Add("blood-loss", bloodVolumeSeverity, DGLabWaveLibrary.BloodLossFade, 0.12f, "blood-loss");
+            Add("blood-loss", bloodVolumeSeverity, DGLabWaveLibrary.BloodLossFade, 0.12f, "blood-loss", 0.72f);
             Add(HypotensionConditionKey(bloodPressure, body.inCardiacArrest), hypotensionSeverity, SelectHypotensionWave(hypotensionSeverity), 0.12f, "hypotension");
-            Add(HypertensionConditionKey(bloodPressure, body.inCardiacArrest), hypertensionSeverity, SelectHypertensionWave(hypertensionSeverity), 0.12f, "hypertension");
+            Add(HypertensionConditionKey(bloodPressure, body.inCardiacArrest), hypertensionSeverity, SelectHypertensionWave(hypertensionSeverity), 0.12f, "hypertension", 0.62f);
             Add("internal-bleeding", internalBleedingSeverity, SelectBleedingWave(internalBleedingSeverity), 0.12f, "internal-bleeding");
-            Add("infection", maxLimbInfection / 90f, SelectInfectionWave(maxLimbInfection / 90f), 0.14f, "infection");
-            Add(SepsisConditionKey(septicSeverity), septicSeverity, SelectSepsisWave(septicSeverity), 0.14f, "sepsis");
-            Add("sickness", sicknessSeverity, SelectSicknessWave(sicknessSeverity), 0.16f, "sickness");
-            Add("radiation", radiationSeverity, DGLabWaveLibrary.RadiationSicknessRoll, 0.12f, "radiation");
-            Add("oxygen", oxygenSeverity, SelectOxygenWave(oxygenSeverity), 0.12f, "oxygen");
-            Add("arrhythmia", arrhythmiaSeverity, SelectArrhythmiaWave(arrhythmiaSeverity), 0.12f, "arrhythmia");
+            Add("infection", infectionRawSeverity, SelectInfectionWave(infectionRawSeverity), 0.14f, "infection", 0.55f);
+            Add(SepsisConditionKey(sepsisSeverity), sepsisSeverity, SelectSepsisWave(sepsisSeverity), 0.14f, "sepsis", 0.82f);
+            Add("sickness", sicknessSeverity, SelectSicknessWave(sicknessSeverity), 0.16f, "sickness", 0.55f);
+            Add("radiation", radiationSeverity, DGLabWaveLibrary.RadiationSicknessRoll, 0.12f, "radiation", 0.65f);
+            Add("oxygen", oxygenSeverity, SelectOxygenWave(oxygenSeverity), 0.12f, "oxygen", 0.82f);
+            Add("arrhythmia", arrhythmiaSeverity, SelectArrhythmiaWave(arrhythmiaSeverity), 0.12f, "arrhythmia", 0.68f);
             Add("cardiac-arrest", cardiacArrestSeverity, DGLabWaveLibrary.CardiacArrestDrop, 0.12f, "cardiac-arrest");
-            Add("hunger", hungerSeverity, DGLabWaveLibrary.HungerGnaw, 0.18f, "hunger");
-            Add("temperature", temperatureSeverity, SelectTemperatureWave(temperature), 0.14f, "temperature");
-            Add("exertion", exertionSeverity, SelectFatigueWave(exertionSeverity), 0.2f, "exertion");
-            Add("tired", tiredSeverity, SelectFatigueWave(tiredSeverity), 0.2f, "tired");
-            Add("panic", panicSeverity, DGLabWaveLibrary.PanicHeartbeat, 0.12f, "panic");
-            Add(NerveConditionKey(consciousness, brainHealth, body.strokeAmount), nerveSeverity, SelectNerveWave(consciousness, brainHealth, body.strokeAmount, nerveSeverity), 0.1f, "nerve");
+            Add("hunger", hungerSeverity, DGLabWaveLibrary.HungerGnaw, 0.18f, "hunger", 0.42f);
+            Add("thirst", thirstSeverity, DGLabWaveLibrary.ThirstNeedle, 0.18f, "thirst", 0.46f);
+            Add("temperature", temperatureSeverity, SelectTemperatureWave(temperature), 0.14f, "temperature", 0.72f);
+            Add("exertion", exertionSeverity, SelectFatigueWave(exertionSeverity), 0.2f, "exertion", 0.4f);
+            Add("tired", tiredSeverity, SelectFatigueWave(tiredSeverity), 0.2f, "tired", 0.36f);
+            Add("mood", moodSeverity, DGLabWaveLibrary.MoodSink, 0.2f, "mood", 0.28f);
+            Add("panic", panicSeverity, DGLabWaveLibrary.PanicHeartbeat, 0.12f, "panic", 0.52f);
+            Add("wet", wetnessSeverity, DGLabWaveLibrary.ColdShiver, 0.35f, "wet", 0.28f);
+            Add("dirty", dirtSeverity, DGLabWaveLibrary.InfectionCrawl, 0.45f, "dirty", 0.22f);
+            Add("low-immunity", immunitySeverity, DGLabWaveLibrary.MildInfectionCrawl, 0.2f, "low-immunity", 0.18f);
+            Add(ConsciousnessConditionKey(consciousness), Mathf.Min(consciousnessScaled, 0.35f), SelectConsciousnessWave(consciousness), 0.1f, "consciousness");
+            var nerveConditionKey = NerveConditionKey(consciousness, brainHealth, body.strokeAmount);
+            Add(nerveConditionKey, nerveSeverity, SelectNerveWave(consciousness, brainHealth, body.strokeAmount, nerveSeverity), 0.1f, "nerve");
             Add("trauma", traumaSeverity, DGLabWaveLibrary.TraumaFlashback, 0.08f, "trauma");
             Add("pain-shock", painShockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f, "pain-shock");
             Add("shock", shockSeverity, DGLabWaveLibrary.HeavyShock, 0.08f, "shock");
@@ -417,13 +434,18 @@ namespace DGLab.BepInEx
                 nerveScaled * 1.02f,
                 circulationSeverity * 0.95f,
                 oxygenScaled * 1.0f,
-                infectionSeverity * 0.62f,
-                ApplyConditionSeverity("temperature", temperatureSeverity) * 0.6f,
-                ApplyConditionSeverity("panic", panicSeverity) * 0.35f,
+                infectionSeverity * 0.45f,
+                metabolicSeverity * 0.18f,
+                moodScaled * 0.28f,
+                wetnessScaled * 0.12f,
+                dirtScaled * 0.08f,
+                immunityScaled * 0.08f,
+                ApplyConditionSeverity("temperature", temperatureSeverity) * 0.45f,
+                ApplyConditionSeverity("panic", panicSeverity) * 0.28f,
                 criticalSeverity > 0.82f ? 1f : 0f);
 
-            _sustainedRatioA = ComputeRuntimeRatio(systemic, channelARegionalSeverity, painCap, mitigation, criticalSeverity);
-            _sustainedRatioB = ComputeRuntimeRatio(systemic, channelBRegionalSeverity, painCap, mitigation, criticalSeverity);
+            _sustainedRatioA = ComputeRuntimeRatio(systemic, channelARegionalSeverity, painCap, mitigation, criticalSeverity, consciousnessSeverity, perfusionSeverity, severeInjuryEvidence);
+            _sustainedRatioB = ComputeRuntimeRatio(systemic, channelBRegionalSeverity, painCap, mitigation, criticalSeverity, consciousnessSeverity, perfusionSeverity, severeInjuryEvidence);
             LogTest(
                 "score " +
                 "AReg=" + Percent(channelARegionalSeverity) + " " +
@@ -440,6 +462,7 @@ namespace DGLab.BepInEx
                 "shock=" + Percent(shockSeverity) + " " +
                 "painShock=" + Percent(painShockSeverity) + " " +
                 "trauma=" + Percent(traumaSeverity) + " " +
+                "consciousness=" + Percent(consciousnessSeverity) + " " +
                 "nerve=" + Percent(nerveSeverity) + " " +
                 "blood=" + Percent(circulationSeverity) + " " +
                 "bleed=" + Percent(bleedingSeverity) + " " +
@@ -482,11 +505,11 @@ namespace DGLab.BepInEx
             return Mathf.Clamp01(severity * ConditionScale(key));
         }
 
-        private void Add(string key, float severity, string[] wave, float threshold, string toggleKey = null)
+        private void Add(string key, float severity, string[] wave, float threshold, string toggleKey = null, float displayCap = 1f)
         {
             if (!IsConditionEnabled(toggleKey ?? key)) return;
             severity *= ConditionScale(toggleKey ?? key);
-            severity = Mathf.Clamp01(severity);
+            severity = Mathf.Min(Mathf.Clamp01(severity), Mathf.Clamp01(displayCap));
             if (severity < threshold) return;
             for (var i = 0; i < _layers.Count; i++)
             {
@@ -656,6 +679,11 @@ namespace DGLab.BepInEx
             if (brainHealth < 60f) return "braindamage3";
             if (brainHealth < 80f) return "braindamage2";
             if (brainHealth < 95f) return "braindamage1";
+            return "braindamage1";
+        }
+
+        private static string ConsciousnessConditionKey(float consciousness)
+        {
             if (consciousness < 55f) return "confused3";
             if (consciousness < 72f) return "confused2";
             return "confused1";
@@ -753,6 +781,11 @@ namespace DGLab.BepInEx
         {
             if (strokeAmount > 70f) return DGLabWaveLibrary.FibrillationChaos;
             if (brainHealth < 95f) return DGLabWaveLibrary.BrainInjuryJolt;
+            return DGLabWaveLibrary.BrainInjuryJolt;
+        }
+
+        private static string[] SelectConsciousnessWave(float consciousness)
+        {
             if (consciousness < 55f) return DGLabWaveLibrary.SevereHypotensionFade;
             if (consciousness < 72f) return DGLabWaveLibrary.ConfusionDrift;
             return DGLabWaveLibrary.DizzinessNerve;
@@ -772,7 +805,7 @@ namespace DGLab.BepInEx
             return layers == null || layers.Length == 0 ? "none" : string.Join("+", layers.Select(layer => layer.Key).ToArray());
         }
 
-        private static float ComputeRuntimeRatio(float systemic, float regional, float painCap, float mitigation, float criticalSeverity)
+        private static float ComputeRuntimeRatio(float systemic, float regional, float painCap, float mitigation, float criticalSeverity, float consciousnessSeverity, float perfusionSeverity, float severeInjuryEvidence)
         {
             var regionalCap = Mathf.Max(painCap, criticalSeverity >= 0.75f ? 1f : 0f);
             var cappedRegional = Mathf.Min(ShapeRuntimeSeverity(regional) * 0.92f, regionalCap);
@@ -780,8 +813,22 @@ namespace DGLab.BepInEx
             var severity = WeightedMax(systemic, cappedRegional);
             var mitigationScale = criticalSeverity >= 0.9f ? 1f : (severity >= 0.9f ? 1f - mitigation * 0.2f : 1f - mitigation);
             severity = Mathf.Clamp01(severity * mitigationScale);
+            severity *= PerfusionOutputScale(perfusionSeverity, criticalSeverity, severeInjuryEvidence);
+            severity *= ConsciousnessOutputScale(consciousnessSeverity, criticalSeverity, severeInjuryEvidence);
             if (severity < 0.08f) return 0f;
             return Mathf.Clamp01(severity);
+        }
+
+        private static float ConsciousnessOutputScale(float consciousnessSeverity, float criticalSeverity, float severeInjuryEvidence)
+        {
+            if (criticalSeverity >= 0.9f && severeInjuryEvidence >= 0.45f) return 1f;
+            return Mathf.Lerp(1f, 0.55f, Mathf.Clamp01(consciousnessSeverity));
+        }
+
+        private static float PerfusionOutputScale(float perfusionSeverity, float criticalSeverity, float severeInjuryEvidence)
+        {
+            if (criticalSeverity >= 0.9f && severeInjuryEvidence >= 0.45f) return 1f;
+            return Mathf.Lerp(1f, 0.68f, Mathf.Clamp01(perfusionSeverity));
         }
 
         private static float GateShockByInjuryEvidence(float shock, float evidence)

@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/BepInExPlugin/">
+    <Project Path="BepInExPlugin/DGLab.BepInEx.csproj" />
+  </Folder>
+  <Project Path="DGLab.Core/DGLab.Core.csproj" />
+  <Project Path="DGLab.Game/DGLab.Game.csproj" />
+</Solution>

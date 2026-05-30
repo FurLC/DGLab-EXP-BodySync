@@ -4,9 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
+using DGLab.BepInEx.Network.Bluetooth;
 using UnityEngine;
 
 namespace DGLab.BepInEx
@@ -59,6 +62,9 @@ namespace DGLab.BepInEx
         private DGLabImGuiRunner _standaloneImGuiRunner;
         private readonly List<UiLanguageOption> _uiLanguageOptions = new List<UiLanguageOption>();
         private readonly Dictionary<string, Dictionary<string, string>> _gameLanguageCache = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Dictionary<string, string>> _normalizedGameLanguageCache = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _translationCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _conditionDisplayNameCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private float _nextLanguageScanTime = -1f;
         private float _lastObservedShock;
         private float _lastObservedUpperPain;
@@ -77,6 +83,12 @@ namespace DGLab.BepInEx
         private string _waitingForUiKeyBind;
         private Harmony _harmony;
         private bool _qrPanelExpanded = true;
+        private readonly List<BleDeviceInfo> _bleDeviceOptions = new List<BleDeviceInfo>();
+        private bool _bleScanInProgress;
+        private string _bleScanStatus = string.Empty;
+        private float _bleScanStatusTime = -1f;
+        private string _backendStatusText = string.Empty;
+        private string _backendErrorText = string.Empty;
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKeyCode);
@@ -163,10 +175,11 @@ namespace DGLab.BepInEx
         {
             try
             {
+                SetBackendStatus(T("Connecting to backend...", "正在连接后端..."));
                 DisconnectClientForReconnect();
 
                 _runtimeEmbeddedBackend = ShouldStartEmbeddedBackend();
-                _externalProbeActive = _autoSelectBackend.Value && !_runtimeEmbeddedBackend;
+                _externalProbeActive = _autoSelectBackend.Value && !_runtimeEmbeddedBackend && !IsOtcControllerProfile && !IsBluetoothProfile;
                 _externalProbeDeadline = _externalProbeActive ? Time.realtimeSinceStartup + _externalBackendProbeSeconds.Value : -1f;
                 if (_runtimeEmbeddedBackend)
                 {
@@ -175,51 +188,71 @@ namespace DGLab.BepInEx
                 }
                 else
                 {
-                    var externalUrl = ResolveExternalBackendUrl();
-                    if (string.IsNullOrWhiteSpace(externalUrl))
+                    if (IsBluetoothProfile)
                     {
-                        _runtimeEmbeddedBackend = true;
-                        RefreshEmbeddedTerminalIdIfNeeded(true);
-                        _client = new DGLabClient("0.0.0.0", _embeddedServerPort.Value, _embeddedTerminalId.Value);
+                        var profile = IsBluetoothV2Profile
+                            ? DGLabBluetoothProfile.V2
+                            : DGLabBluetoothProfile.V3;
+                        _client = new DGLabClient(new InTheHandBleGattClient(profile), profile, BluetoothDeviceNameValue);
                     }
+
                     else
                     {
-                        _client = new DGLabClient(externalUrl);
+                        var externalUrl = ResolveExternalBackendUrl();
+                        if (string.IsNullOrWhiteSpace(externalUrl))
+                        {
+                            _runtimeEmbeddedBackend = true;
+                            RefreshEmbeddedTerminalIdIfNeeded(true);
+                            _client = new DGLabClient("0.0.0.0", _embeddedServerPort.Value, _embeddedTerminalId.Value);
+                        }
+                        else
+                        {
+                            _client = new DGLabClient(externalUrl, IsOtcControllerProfile);
+                        }
                     }
                 }
 
                 _client.OnConnected += () =>
                 {
-                    _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded WebSocket backend started on port " + _embeddedServerPort.Value + "." : "DG-Lab connected to external Socket V2 backend. Waiting for backend-assigned clientId.");
+                    SetBackendStatus(IsBluetoothProfile
+                        ? T("Bluetooth connected.", "蓝牙已连接。")
+                        : (IsOtcControllerProfile ? T("OTC controller connected.", "OTC 控制器已连接。") : T("Socket backend connected.", "Socket 后端已连接。")));
+                    _log.LogInfo(_runtimeEmbeddedBackend
+                        ? "DG-Lab embedded WebSocket backend started on port " + _embeddedServerPort.Value + "."
+                        : (IsBluetoothProfile ? "DG-Lab connected to Bluetooth device." : (IsOtcControllerProfile ? "DG-Lab connected to OTC controller." : "DG-Lab connected to external Socket V2 backend. Waiting for backend-assigned clientId.")));
                     LogQrUrls(_runtimeEmbeddedBackend ? "embedded backend started" : "external backend connected");
                 };
                 _client.OnClosed += HandleClientClosed;
-                _client.OnError += ex => _log.LogError(ex);
+                _client.OnError += ex =>
+                {
+                    SetBackendError(ex.Message);
+                    _log.LogError(ex);
+                };
                 _client.OnMessage += HandleMessage;
                 _client.Connect();
                 _log.LogInfo(_runtimeEmbeddedBackend ? "DG-Lab embedded WebSocket backend initialized: 0.0.0.0:" + _embeddedServerPort.Value : "DG-Lab external WebSocket client initialized: " + ResolveExternalBackendUrl());
 
-                _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
-                _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
-                _conditionMixer = CreateConditionMixer();
-                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
-                RegisterDefaultWaves();
-                DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
-                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
+                RebuildOutputPipeline();
             }
             catch (System.Exception ex)
             {
+                SetBackendError(ex.Message);
                 _log.LogError("DG-Lab WebSocket initialization failed. Menu will remain available.");
                 _log.LogError(ex);
                 _client = null;
-                _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
-                _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
-                _conditionMixer = CreateConditionMixer();
-                _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
-                RegisterDefaultWaves();
-                DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
-                DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
+                RebuildOutputPipeline();
             }
+        }
+
+        private void RebuildOutputPipeline()
+        {
+            _persistent = new DGLabPersistentOutput(_client, null, _outputState, IsOutputChannelEnabled);
+            _strengthEnvelope = new DGLabStrengthEnvelope(() => _client, () => _strengthA.Value, () => _strengthB.Value, _outputState);
+            _conditionMixer = CreateConditionMixer();
+            _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
+            RegisterDefaultWaves();
+            DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
+            DamageHooks.SetEnabledProvider(() => _enableDamageHook != null && _enableDamageHook.Value);
         }
 
         private DGLabConditionMixer CreateConditionMixer()
@@ -589,28 +622,94 @@ namespace DGLab.BepInEx
         internal string ExternalBackendProfileText => _externalBackendProfile != null ? _externalBackendProfile.Value : "<not loaded>";
         internal string ExternalBackendUrlText => ResolveExternalBackendUrl();
 
-        internal string ThirdPartyControllerUrlValue
+        internal string OtcControllerUrlValue
         {
-            get => _thirdPartyControllerUrl != null ? _thirdPartyControllerUrl.Value : string.Empty;
+            get => _otcControllerUrl != null ? _otcControllerUrl.Value : string.Empty;
             set
             {
-                if (_thirdPartyControllerUrl == null) return;
+                if (_otcControllerUrl == null) return;
                 var next = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-                if (string.Equals(_thirdPartyControllerUrl.Value, next, StringComparison.Ordinal)) return;
-                _thirdPartyControllerUrl.Value = next;
+                if (string.Equals(_otcControllerUrl.Value, next, StringComparison.Ordinal)) return;
+                _otcControllerUrl.Value = next;
                 _advancedConfig?.Save();
+            }
+        }
+
+        internal string OtcControllerIpValue
+        {
+            get => ExtractHostFromUrl(OtcControllerUrlValue, "127.0.0.1");
+            set
+            {
+                if (_otcControllerUrl == null) return;
+                var host = NormalizeHostInput(value, "127.0.0.1");
+                OtcControllerUrlValue = BuildOtcControllerUrl(host);
             }
         }
 
         internal bool IsOfficialSocketProfile => _externalBackendProfile != null &&
             string.Equals(_externalBackendProfile.Value, "OfficialSocket", StringComparison.OrdinalIgnoreCase);
 
-        internal bool IsThirdPartyControllerProfile => _externalBackendProfile != null &&
-            string.Equals(_externalBackendProfile.Value, "ThirdPartyController", StringComparison.OrdinalIgnoreCase);
+        internal bool IsOtcControllerProfile => _externalBackendProfile != null &&
+            string.Equals(_externalBackendProfile.Value, "OtcController", StringComparison.OrdinalIgnoreCase);
+
+        internal bool IsBluetoothV2Profile => _externalBackendProfile != null &&
+            string.Equals(_externalBackendProfile.Value, "BluetoothV2", StringComparison.OrdinalIgnoreCase);
+
+        internal bool IsBluetoothV3Profile => _externalBackendProfile != null &&
+            string.Equals(_externalBackendProfile.Value, "BluetoothV3", StringComparison.OrdinalIgnoreCase);
+
+        internal bool IsBluetoothProfile => IsBluetoothV2Profile || IsBluetoothV3Profile;
+
+        internal string BluetoothDeviceNameValue
+        {
+            get => _bluetoothDeviceName != null ? _bluetoothDeviceName.Value : string.Empty;
+            set
+            {
+                if (_bluetoothDeviceName == null) return;
+                var next = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+                if (string.Equals(_bluetoothDeviceName.Value, next, StringComparison.Ordinal)) return;
+                _bluetoothDeviceName.Value = next;
+                _advancedConfig?.Save();
+            }
+        }
+
+        internal IReadOnlyList<BleDeviceInfo> BleDeviceOptions => _bleDeviceOptions;
+
+        internal bool BleScanInProgress => _bleScanInProgress;
+
+        internal string BleScanStatusText
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_bleScanStatus)) return _bleScanStatus;
+                return _bleDeviceOptions.Count == 0
+                    ? T("No devices scanned yet.", "尚未扫描设备。")
+                    : T("Select a scanned device, then connect.", "选择扫描到的设备后连接。文本框仍可手动输入。 ");
+            }
+        }
+
+        internal string BluetoothStatusText => IsBluetoothProfile
+            ? T("Direct BLE is experimental. Scan nearby devices, select one, then connect.", "蓝牙 BLE 直连为实验功能。先扫描附近设备，选择后连接。")
+            : string.Empty;
 
         internal bool ShowQrPanel => IsEmbeddedBackendActive || IsOfficialSocketProfile;
 
-        internal bool IsBackendConnected => _client != null;
+        internal bool ShowQrSocketStatus => ShowQrPanel;
+
+        internal bool IsBackendConnected => _client != null && _client.IsConnected;
+
+        internal bool CanConnectFromMenu => _client == null || !_client.IsConnected;
+
+        internal string BackendStatusDetailText
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_backendErrorText)) return _backendErrorText;
+                if (!string.IsNullOrWhiteSpace(_backendStatusText)) return _backendStatusText;
+                if (ShowQrPanel && !IsBackendConnected) return T("Scan the QR code in the DG-Lab app to connect.", "请在 DG-Lab App 中扫描二维码连接。");
+                return IsBackendConnected ? T("Connected", "已连接") : T("Disconnected", "未连接");
+            }
+        }
 
         internal bool QrPanelExpanded => _qrPanelExpanded;
 
@@ -627,16 +726,14 @@ namespace DGLab.BepInEx
             _externalBackendProfile.Value = profile;
             _advancedConfig.Save();
 
-            // Only force-reconnect to external if the new profile has a valid URL
-            var url = ResolveExternalBackendUrl();
-            if (!string.IsNullOrWhiteSpace(url) && !url.Equals(_serverUrl?.Value, StringComparison.OrdinalIgnoreCase))
-            {
-                _autoBackendForcedEmbedded = false;
-                _runtimeEmbeddedBackend = false;
-                _lastReconnectTime = -1f;
-                _qrService?.InvalidateAddressCache();
-                InitializeClient();
-            }
+            _autoBackendForcedEmbedded = false;
+            _runtimeEmbeddedBackend = ShouldStartEmbeddedBackend();
+            _externalProbeActive = false;
+            _externalProbeDeadline = -1f;
+            _lastReconnectTime = -1f;
+            SetBackendStatus(T("Switching backend profile...", "正在切换后端类型..."));
+            _qrService?.InvalidateAddressCache();
+            InitializeClient();
         }
 
         internal bool MenuToggleAltRequired
@@ -847,6 +944,8 @@ namespace DGLab.BepInEx
             {
                 if (_uiLanguage == null) return;
                 _uiLanguage.Value = NormalizeUiLanguageValue(value);
+                _translationCache.Clear();
+                _conditionDisplayNameCache.Clear();
                 _advancedConfig?.Save();
             }
         }
@@ -908,8 +1007,8 @@ namespace DGLab.BepInEx
 
         private void RefreshUiLanguageOptions(bool force)
         {
-            if (!force && _uiLanguageOptions.Count > 0 && Time.realtimeSinceStartup < _nextLanguageScanTime) return;
-            _nextLanguageScanTime = Time.realtimeSinceStartup + 5f;
+            if (!force && _uiLanguageOptions.Count > 0) return;
+            _nextLanguageScanTime = Time.realtimeSinceStartup + 60f;
             _uiLanguageOptions.Clear();
 
             ScanLanguageDirectory(Path.Combine(Paths.GameRootPath, "CasualtiesUnknown_Data", "Lang"));
@@ -966,10 +1065,114 @@ namespace DGLab.BepInEx
             if (key.Length == 0) return string.Empty;
 
             var languageId = UiLanguageValue;
-            var language = LoadGameLanguage(languageId);
-            if (language != null && language.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)) return value;
+            var cacheKey = languageId + "|" + key;
+            if (_translationCache.TryGetValue(cacheKey, out var cachedValue)) return cachedValue;
 
+            var language = LoadGameLanguage(languageId);
+            if (language == null || language.Count == 0)
+            {
+                _translationCache[cacheKey] = string.Empty;
+                return string.Empty;
+            }
+
+            if (TryTranslateGameKey(languageId, language, key, out var value))
+            {
+                _translationCache[cacheKey] = value;
+                return value;
+            }
+
+            var aliases = GameLanguageAliases(key);
+            for (var i = 0; i < aliases.Length; i++)
+            {
+                if (!TryTranslateGameKey(languageId, language, aliases[i], out value)) continue;
+                _translationCache[cacheKey] = value;
+                return value;
+            }
+
+            _translationCache[cacheKey] = string.Empty;
             return string.Empty;
+        }
+
+        private bool TryTranslateGameKey(string languageId, Dictionary<string, string> language, string key, out string value)
+        {
+            value = string.Empty;
+            if (language == null || string.IsNullOrWhiteSpace(key)) return false;
+            if (language.TryGetValue(key, out value) && !string.IsNullOrWhiteSpace(value)) return true;
+
+            var normalizedLanguage = GetNormalizedGameLanguage(languageId, language);
+            return normalizedLanguage.TryGetValue(NormalizeLanguageKey(key), out value) && !string.IsNullOrWhiteSpace(value);
+        }
+
+        private Dictionary<string, string> GetNormalizedGameLanguage(string languageId, Dictionary<string, string> language)
+        {
+            if (_normalizedGameLanguageCache.TryGetValue(languageId, out var cached)) return cached;
+
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in language)
+            {
+                var normalized = NormalizeLanguageKey(kvp.Key);
+                if (normalized.Length == 0 || result.ContainsKey(normalized)) continue;
+                result.Add(normalized, kvp.Value);
+            }
+
+            _normalizedGameLanguageCache[languageId] = result;
+            return result;
+        }
+
+        private static string NormalizeLanguageKey(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return string.Empty;
+            return key.Replace("-", string.Empty).Replace("_", string.Empty).Replace(" ", string.Empty).Trim();
+        }
+
+        private static string[] GameLanguageAliases(string key)
+        {
+            switch ((key ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "pain": return new[] { "Pain" };
+                case "pain1": return new[] { "Pain1", "MildPain", "Discomfort" };
+                case "pain2": return new[] { "Pain2", "Pain" };
+                case "pain3": return new[] { "Pain3", "SeverePain" };
+                case "pain4": return new[] { "Pain4", "Agony", "AgonizingPain" };
+                case "injury": return new[] { "Injury", "Injured", "Wound", "Wounded" };
+                case "fracture": return new[] { "Fracture", "Broken", "BrokenBone", "BoneFracture" };
+                case "dislocation": return new[] { "Dislocation", "Dislocated" };
+                case "bleeding": return new[] { "Bleeding", "Bleed" };
+                case "bleeding1": return new[] { "Bleeding1", "MinorBleeding", "LightBleeding" };
+                case "bleeding2": return new[] { "Bleeding2", "ModerateBleeding" };
+                case "bleeding3": return new[] { "Bleeding3", "SevereBleeding", "HeavyBleeding" };
+                case "bleeding4": return new[] { "Bleeding4", "CatastrophicBleeding" };
+                case "blood-loss": return new[] { "BloodLoss", "BloodVolume", "Blood", "LowBlood" };
+                case "hypotension": return new[] { "Hypotension", "LowBloodPressure", "BloodPressureLow" };
+                case "hypertension": return new[] { "Hypertension", "HighBloodPressure", "BloodPressureHigh" };
+                case "internal-bleeding": return new[] { "InternalBleeding", "InternalBleed" };
+                case "infection": return new[] { "Infection", "Infected" };
+                case "sepsis": return new[] { "Sepsis", "SepticShock" };
+                case "sickness": return new[] { "Sickness", "Sick", "Nausea" };
+                case "radiation": return new[] { "Radiation", "RadiationSickness" };
+                case "oxygen": return new[] { "Oxygen", "BloodOxygen", "Hypoxia", "Hypoxemia" };
+                case "arrhythmia": return new[] { "Arrhythmia", "HeartRate", "Heart" };
+                case "cardiac-arrest": return new[] { "CardiacArrest", "HeartStop" };
+                case "hunger": return new[] { "Hunger", "Hungry" };
+                case "thirst": return new[] { "Thirst", "Thirsty" };
+                case "temperature": return new[] { "Temperature", "BodyTemperature" };
+                case "exertion": return new[] { "Stamina", "Exertion", "Exhaustion" };
+                case "tired": return new[] { "Tired", "Fatigue", "Energy" };
+                case "mood": return new[] { "Mood", "Happiness", "Depression" };
+                case "panic": return new[] { "Panic", "Horror", "Horrified" };
+                case "wet": return new[] { "Wet", "Wetness" };
+                case "dirty": return new[] { "Dirty", "Dirtyness", "Dirtiness" };
+                case "low-immunity": return new[] { "Immunity", "LowImmunity" };
+                case "consciousness": return new[] { "Consciousness", "LowConsciousness" };
+                case "confused1": return new[] { "Confused1", "Dizziness", "Dizzy" };
+                case "confused2": return new[] { "Confused2", "Confusion", "Confused" };
+                case "confused3": return new[] { "Confused3", "Faint", "Fainting", "LowConsciousness" };
+                case "nerve": return new[] { "Nerve", "Neurological", "Brain", "Stroke" };
+                case "trauma": return new[] { "Trauma" };
+                case "pain-shock": return new[] { "PainShock" };
+                case "shock": return new[] { "Shock" };
+                default: return Array.Empty<string>();
+            }
         }
 
         private Dictionary<string, string> LoadGameLanguage(string languageId)
@@ -990,6 +1193,7 @@ namespace DGLab.BepInEx
             }
 
             _gameLanguageCache[languageId] = result;
+            _normalizedGameLanguageCache.Remove(languageId);
             return result;
         }
 
@@ -1014,6 +1218,7 @@ namespace DGLab.BepInEx
 
         private bool ShouldStartEmbeddedBackend()
         {
+            if (IsOtcControllerProfile || IsBluetoothProfile) return false;
             if (_autoBackendForcedEmbedded || (!_autoSelectBackend.Value && _useEmbeddedServer.Value)) return true;
             return _autoSelectBackend.Value && string.IsNullOrWhiteSpace(ResolveExternalBackendUrl());
         }
@@ -1022,7 +1227,10 @@ namespace DGLab.BepInEx
         {
             get
             {
-                if (_autoSelectBackend.Value) return _runtimeEmbeddedBackend ? T("Auto -> Embedded", "自动 -> 内置后端") : T("Auto -> External", "自动 -> 外部后端");
+                if (IsOtcControllerProfile) return T("OTC Controller", "OTC 控制器");
+                if (IsBluetoothV2Profile) return T("Bluetooth V2", "蓝牙 V2");
+                if (IsBluetoothV3Profile) return T("Bluetooth V3", "蓝牙 V3");
+                if (_autoSelectBackend.Value) return _runtimeEmbeddedBackend ? T("Auto -> Embedded", "自动 -> 内置后端") : T("Official Socket", "官方 Socket");
                 return _runtimeEmbeddedBackend ? T("Embedded", "内置后端") : T("External", "外部后端");
             }
         }
@@ -1239,7 +1447,7 @@ namespace DGLab.BepInEx
                 case "trauma": return T("Trauma", "创伤");
                 case "body-shock": return T("Shock", "休克");
                 case "body-consciousness": return T("Consciousness drop", "意识下降");
-                case "unconscious": return T("Unconscious", "昏迷");
+                case "unconscious": return T("Unconscious / coma", "昏迷/失去意识");
                 case "upper-pain": return T("Upper body pain", "上半身疼痛");
                 case "lower-pain": return T("Lower body pain", "下半身疼痛");
                 case "condition": return T("Body condition", "身体状态");
@@ -1258,7 +1466,7 @@ namespace DGLab.BepInEx
                 case "pain4": return T("Agonizing pain", "剧痛难忍");
                 case "confused1": return T("Dizziness", "困惑");
                 case "confused2": return T("Confusion", "非常困惑");
-                case "confused3": return T("Near unconscious", "昏厥");
+                case "confused3": return T("Near fainting", "濒临昏厥");
                 case "injury": return T("Injury", "损伤");
                 case "fracture": return T("Fracture", "骨折");
                 case "dislocation": return T("Dislocation", "脱臼");
@@ -1267,7 +1475,7 @@ namespace DGLab.BepInEx
                 case "bleeding2": return T("Moderate bleeding", "中度出血");
                 case "bleeding3": return T("Severe bleeding", "严重出血");
                 case "bleeding4": return T("Catastrophic bleeding", "灾难性出血");
-                case "blood-loss": return T("Hypovolemic", "低血容量");
+                case "blood-loss": return T("Blood loss", "失血");
                 case "hypotension": return T("Hypotension", "低血压");
                 case "hypertension": return T("Hypertension", "高血压");
                 case "hypotension1": return T("Mild hypotension", "轻度低血压");
@@ -1298,6 +1506,7 @@ namespace DGLab.BepInEx
                 case "wet": return T("Wet", "潮湿");
                 case "dirty": return T("Dirty", "脏污");
                 case "low-immunity": return T("Low immunity", "免疫力低下");
+                case "consciousness": return T("Low consciousness", "意识下降/昏厥风险");
                 case "nerve": return T("Neurological impairment", "神经功能受损");
                 default:
                     return kind == DisplayKeyKind.Condition ? key : T(ToTitleText(key), key);
@@ -1393,6 +1602,12 @@ namespace DGLab.BepInEx
 
         internal void ReconnectFromMenu()
         {
+            if (IsOfficialSocketProfile || IsEmbeddedBackendActive)
+            {
+                RefreshOfficialSocketIdFromMenu();
+                return;
+            }
+
             if (Time.realtimeSinceStartup - _lastReconnectTime < 2f)
             {
                 LogMenuDebug("DG-Lab reconnect ignored because it was requested too recently.");
@@ -1402,6 +1617,38 @@ namespace DGLab.BepInEx
             _lastReconnectTime = Time.realtimeSinceStartup;
             _qrPanelExpanded = true;
             if (_autoSelectBackend.Value && !_runtimeEmbeddedBackend) _autoBackendForcedEmbedded = false;
+            SetBackendStatus(T("Reconnecting...", "正在重连..."));
+            _qrService?.InvalidateAddressCache();
+            InitializeClient();
+        }
+
+        internal void RefreshOfficialSocketIdFromMenu()
+        {
+            if (!ShowQrPanel) return;
+            if (Time.realtimeSinceStartup - _lastReconnectTime < 2f)
+            {
+                LogMenuDebug("DG-Lab refresh ID ignored because it was requested too recently.");
+                return;
+            }
+
+            _lastReconnectTime = Time.realtimeSinceStartup;
+            _qrPanelExpanded = true;
+            _autoBackendForcedEmbedded = false;
+            _runtimeEmbeddedBackend = ShouldStartEmbeddedBackend();
+            SetBackendStatus(T("Refreshing Socket ID and QR...", "正在刷新 Socket ID 和二维码..."));
+            _qrService?.InvalidateAddressCache();
+            InitializeClient();
+        }
+
+        internal void ConnectFromMenu()
+        {
+            _lastReconnectTime = -10f;
+            _qrPanelExpanded = true;
+            _autoBackendForcedEmbedded = false;
+            _runtimeEmbeddedBackend = ShouldStartEmbeddedBackend();
+            _externalProbeActive = false;
+            _externalProbeDeadline = -1f;
+            SetBackendStatus(T("Connecting...", "正在连接..."));
             _qrService?.InvalidateAddressCache();
             InitializeClient();
         }
@@ -1439,11 +1686,13 @@ namespace DGLab.BepInEx
             _waveRouter = new DGLabWaveRouter(_log, _client, _persistent, null, _outputState, IsOutputChannelEnabled);
             RegisterDefaultWaves();
             DamageHooks.UpdateContext(_client, _enableWaveEvents.Value ? _waveRouter : null, _outputState, _strengthEnvelope);
-            _log.LogInfo("DG-Lab disconnected from Socket backend.");
+            SetBackendStatus(T("Disconnected", "已断开"));
+            _log.LogInfo("DG-Lab disconnected from current backend.");
         }
 
         private void HandleClientClosed(string reason)
         {
+            SetBackendStatus(T("Closed: ", "连接关闭：") + (string.IsNullOrWhiteSpace(reason) ? T("no reason", "无原因") : reason));
             _log.LogWarning("DG-Lab closed: " + reason);
             InvalidateQrTexture();
             if (_intentionalDisconnect)
@@ -1482,6 +1731,7 @@ namespace DGLab.BepInEx
 
         private void StartEmbeddedFallback(string reason)
         {
+            if (IsOtcControllerProfile || IsBluetoothProfile) return;
             _runtimeEmbeddedBackend = true;
             _autoBackendForcedEmbedded = true;
             _externalProbeActive = false;
@@ -1490,6 +1740,17 @@ namespace DGLab.BepInEx
             InvalidateQrTexture();
             _pendingReconnectTime = Time.realtimeSinceStartup + 0.2f;
             _log.LogWarning("DG-Lab auto backend fallback to embedded mode: " + reason + ".");
+        }
+
+        private void SetBackendStatus(string message)
+        {
+            _backendStatusText = string.IsNullOrWhiteSpace(message) ? string.Empty : message.Trim();
+            _backendErrorText = string.Empty;
+        }
+
+        private void SetBackendError(string message)
+        {
+            _backendErrorText = T("Error: ", "错误：") + (string.IsNullOrWhiteSpace(message) ? T("unknown error", "未知错误") : message.Trim());
         }
 
         private void TickPendingReconnect()
@@ -2049,12 +2310,92 @@ namespace DGLab.BepInEx
                 if (_officialSocketUrl != null && !string.IsNullOrWhiteSpace(_officialSocketUrl.Value)) return _officialSocketUrl.Value.Trim();
                 return string.Empty;
             }
+            if (profile.Equals("BluetoothV2", StringComparison.OrdinalIgnoreCase) || profile.Equals("BluetoothV3", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
             else
             {
-                if (_thirdPartyControllerUrl != null && !string.IsNullOrWhiteSpace(_thirdPartyControllerUrl.Value)) return _thirdPartyControllerUrl.Value.Trim();
+                if (_otcControllerUrl != null && !string.IsNullOrWhiteSpace(_otcControllerUrl.Value)) return _otcControllerUrl.Value.Trim();
             }
 
             return _serverUrl != null ? _serverUrl.Value : string.Empty;
         }
+
+        internal void StartBleScanFromMenu()
+        {
+            if (!IsBluetoothProfile || _bleScanInProgress) return;
+
+            _bleScanInProgress = true;
+            _bleScanStatus = T("Scanning nearby BLE devices...", "正在扫描附近 BLE 设备...");
+            _bleScanStatusTime = Time.realtimeSinceStartup;
+            var profile = IsBluetoothV2Profile ? DGLabBluetoothProfile.V2 : DGLabBluetoothProfile.V3;
+            Task.Run(() => ScanBleDevicesAsync(profile));
+        }
+
+        internal void SelectBleDevice(BleDeviceInfo device)
+        {
+            BluetoothDeviceNameValue = string.IsNullOrWhiteSpace(device.Id) ? device.Name : device.Id;
+            _bleScanStatus = T("Selected BLE device: ", "已选择 BLE 设备：") + device.DisplayName;
+            _bleScanStatusTime = Time.realtimeSinceStartup;
+        }
+
+        private async Task ScanBleDevicesAsync(DGLabBluetoothProfile profile)
+        {
+            try
+            {
+                var devices = await InTheHandBleGattClient.ScanDevicesAsync(profile, TimeSpan.FromSeconds(6)).ConfigureAwait(false);
+                lock (_bleDeviceOptions)
+                {
+                    _bleDeviceOptions.Clear();
+                    _bleDeviceOptions.AddRange(devices);
+                }
+                _bleScanStatus = devices.Count == 0
+                    ? "No matching DG-Lab BLE devices found. / 未找到匹配的 DG-Lab BLE 设备。"
+                    : "Scan complete. Select a device below. / 扫描完成。请在下方选择设备。";
+            }
+            catch (Exception ex)
+            {
+                _bleScanStatus = "BLE scan failed / BLE 扫描失败: " + ex.Message;
+                _log?.LogError(ex);
+            }
+            finally
+            {
+                _bleScanInProgress = false;
+                _bleScanStatusTime = Time.realtimeSinceStartup;
+            }
+        }
+
+        private static string BuildOtcControllerUrl(string host)
+        {
+            return "ws://" + NormalizeHostInput(host, "127.0.0.1") + ":60536/1";
+        }
+
+        private static string NormalizeHostInput(string value, string fallback)
+        {
+            value = (value ?? string.Empty).Trim();
+            if (value.Length == 0) return fallback;
+            value = value.Replace("ws://", string.Empty).Replace("wss://", string.Empty);
+            var slash = value.IndexOf('/');
+            if (slash >= 0) value = value.Substring(0, slash);
+            var colon = value.LastIndexOf(':');
+            if (colon > 0) value = value.Substring(0, colon);
+            return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        }
+
+        private static string ExtractHostFromUrl(string url, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return fallback;
+            try
+            {
+                var uri = new Uri(url.Trim());
+                return string.IsNullOrWhiteSpace(uri.Host) ? fallback : uri.Host;
+            }
+            catch
+            {
+                return NormalizeHostInput(url, fallback);
+            }
+        }
+
     }
 }

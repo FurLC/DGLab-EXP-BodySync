@@ -12,11 +12,6 @@
     <ProjectReference Include="..\DGLab.Core\DGLab.Core.csproj" />
     <ProjectReference Include="..\DGLab.Game\DGLab.Game.csproj" />
 
-    <Reference Include="QRCoder">
-      <HintPath>lib\QRCoder.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-
     <Reference Include="BepInEx">
       <HintPath>lib\BepInEx.dll</HintPath>
       <Private>false</Private>
@@ -54,7 +49,7 @@
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UI">
-      <HintPath>E:\Steam\steamapps\common\Casualties Unknown Demo\CasualtiesUnknown_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <HintPath>lib\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UIModule">
@@ -62,7 +57,7 @@
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>E:\Steam\steamapps\common\Casualties Unknown Demo\CasualtiesUnknown_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>lib\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
